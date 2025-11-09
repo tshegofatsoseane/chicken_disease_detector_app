@@ -6,7 +6,7 @@ from picamera2 import Picamera2
 from tflite_runtime.interpreter import Interpreter
 
 # ==== CONFIG ====
-LOCAL_BACKEND = "http://192.168.100.73:8000"
+LOCAL_BACKEND = "https://chicken-disease-detector-app.onrender.com"
 BACKEND_URL = f"{LOCAL_BACKEND}/api/frame"
 CHECK_START_URL = f"{LOCAL_BACKEND}/check-start"
 MODEL_PATH = "chicken_disease_classifier_vgg16.tflite"
