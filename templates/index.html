@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Kgosi BioDrone</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="bg-gray-50 text-gray-900">
+  <!-- Header -->
+  <header class="bg-white shadow-sm border-b px-6 py-4 flex justify-between items-center">
+    <div>
+      <h1 class="text-xl font-semibold text-purple-700">Kgosi BioDrone</h1>
+      <p class="text-sm text-gray-500">Advanced AI-powered poultry health monitoring system</p>
+    </div>
+    <div class="space-x-3">
+      <button id="settings" class="btn-secondary">⚙️ Settings</button>
+      <button id="connection" class="btn-secondary">📶 Connection</button>
+      <button id="logout" class="btn-secondary">🚪 Logout</button>
+    </div>
+  </header>
+
+  <!-- Main Grid -->
+  <main class="p-6 grid grid-cols-3 gap-6">
+    <!-- Live Detection -->
+    <section class="col-span-2 bg-white p-5 rounded-2xl shadow">
+      <h2 class="font-semibold text-lg mb-2">Live Detection</h2>
+      <p class="text-sm text-gray-500 mb-4">AI-powered disease detection</p>
+
+      <div id="live-container" class="flex flex-col items-center border border-dashed border-purple-300 rounded-lg p-6">
+        <img id="video" src="" alt="Live Feed" class="rounded-xl shadow-md mb-3 w-full max-h-[400px] object-contain">
+        <p class="text-gray-400" id="label">Start camera to begin monitoring</p>
+      </div>
+
+      <div class="mt-4 flex space-x-3">
+        <button id="start" class="btn-primary" onclick="triggerPi()">Start Camera</button>
+        <button id="stop" class="btn-danger" onclick="stopPi()" disabled>Stop Camera</button>
+        <button id="capture" class="btn-secondary" onclick="captureFrame()" disabled>Capture</button>
+        <button id="analyze" class="btn-warning" onclick="analyzeFrame()" disabled>Analyze</button>
+      </div>
+
+      <!-- Detection Results -->
+      <div class="mt-6 bg-purple-50 border border-purple-200 rounded-2xl p-4">
+        <h3 class="font-semibold text-purple-700 mb-2">Detection Results</h3>
+        <div id="detection-result" class="flex justify-between items-center">
+          <span class="text-gray-500 text-sm">No detection yet</span>
+          <span class="text-sm text-gray-400 italic">Start camera or analyze a frame</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Sidebar -->
+    <aside class="bg-white p-5 rounded-2xl shadow space-y-5">
+      <!-- Capture -->
+      <div>
+        <h3 class="font-semibold mb-2 text-purple-700">1. Capture / Upload</h3>
+        <button class="btn-primary w-full mb-2" onclick="triggerPi()">Start Live Feed</button>
+        <button class="btn-secondary w-full mb-2" onclick="captureFrame()">Capture</button>
+      </div>
+
+      <!-- AI Analysis -->
+      <div>
+        <h3 class="font-semibold mb-2 text-purple-700">2. AI Analysis</h3>
+        <button class="btn-primary w-full mb-2" onclick="analyzeFrame()">Start Analysis</button>
+      </div>
+
+      <!-- Detection History -->
+      <div>
+        <h3 class="font-semibold mb-2 text-purple-700">3. Detection History</h3>
+        <p class="text-sm text-gray-400">No history yet</p>
+      </div>
+
+      <!-- Quick Actions -->
+      <div>
+        <h3 class="font-semibold mb-2 text-purple-700">4. Quick Actions</h3>
+        <button class="btn-danger w-full mb-2">Alert</button>
+        <button class="btn-warning w-full mb-2">Schedule</button>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    const socket = io({ transports: ["websocket"] });
+    let isLive = false;
+    let hasCapture = false;
+
+    socket.on("new_frame", data => {
+      if (isLive) {
+        document.getElementById("video").src = "data:image/jpeg;base64," + data.frame;
+        document.getElementById("label").innerText = "🔴 Live Monitoring...";
+      }
+    });
+
+    socket.on("pi_stopped", () => {
+      isLive = false;
+      document.getElementById("label").innerText = "🛑 Feed stopped.";
+      document.getElementById("start").disabled = false;
+      document.getElementById("stop").disabled = true;
+      document.getElementById("capture").disabled = true;
+    });
+
+    socket.on("frame_captured", data => {
+      hasCapture = true;
+      isLive = false;
+      document.getElementById("video").src = "data:image/jpeg;base64," + data.frame;
+      document.getElementById("label").innerText = "📸 Frame captured! Feed paused.";
+      document.getElementById("analyze").disabled = false;
+      document.getElementById("stop").disabled = true;
+      document.getElementById("capture").disabled = true;
+    });
+
+    socket.on("frame_analyzed", data => {
+      document.getElementById("label").innerText = "🩺 Analyzed: " + data.label;
+      document.getElementById("detection-result").innerHTML = `
+        <span class="text-gray-700 font-medium">${data.label}</span>
+        <span class="text-green-600 font-semibold">✅ Detection Complete</span>
+      `;
+    });
+
+    function triggerPi() {
+      fetch("/trigger-pi", { method: "POST" });
+      isLive = true;
+      hasCapture = false;
+      document.getElementById("start").disabled = true;
+      document.getElementById("stop").disabled = false;
+      document.getElementById("capture").disabled = false;
+      document.getElementById("analyze").disabled = true;
+      document.getElementById("label").innerText = "🔄 Starting live feed...";
+    }
+
+    function stopPi() {
+      fetch("/reset-pi", { method: "POST" });
+      isLive = false;
+      document.getElementById("stop").disabled = true;
+      document.getElementById("start").disabled = false;
+      document.getElementById("capture").disabled = true;
+      document.getElementById("label").innerText = "🛑 Feed stopped.";
+    }
+
+    function captureFrame() {
+      fetch("/capture-frame", { method: "POST" })
+        .then(() => fetch("/reset-pi", { method: "POST" })) // stop feed automatically
+        .then(() => {
+          document.getElementById("label").innerText = "📸 Capturing frame and stopping feed...";
+          isLive = false;
+        });
+    }
+
+    function analyzeFrame() {
+      if (!hasCapture) return alert("Please capture a frame first!");
+      fetch("/analyze-frame", { method: "POST" });
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+.btn-primary {
+  background-color: #7C3AED;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.75rem;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+.btn-primary:hover { background-color: #6D28D9; }
+
+.btn-secondary {
+  background-color: #EDE9FE;
+  color: #6D28D9;
+  padding: 0.5rem 1rem;
+  border-radius: 0.75rem;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+.btn-secondary:hover { background-color: #DDD6FE; }
+
+.btn-danger {
+  background-color: #EF4444;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.75rem;
+  font-weight: 500;
+}
+.btn-danger:hover { background-color: #DC2626; }
+
+.btn-warning {
+  background-color: #F59E0B;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 0.75rem;
+  font-weight: 500;
+}
+.btn-warning:hover { background-color: #D97706; }
+
+/* Detection Result Card */
+#detection-result {
+  background: white;
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
