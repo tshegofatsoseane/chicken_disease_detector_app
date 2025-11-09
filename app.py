@@ -1,33 +1,44 @@
 from flask import Flask, request, jsonify, render_template_string
 from flask_socketio import SocketIO, emit
+from werkzeug.middleware.proxy_fix import ProxyFix
 
+# === Flask app setup ===
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
+app.wsgi_app = ProxyFix(app.wsgi_app)  # Needed if behind a proxy (like Render)
 
+# === SocketIO setup ===
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
+
+# === Global storage for latest frame/label ===
 latest_frame = None
 latest_label = None
 
+# === API endpoint to receive frames ===
 @app.route("/api/frame", methods=["POST"])
 def receive_frame():
     global latest_frame, latest_label
     data = request.get_json()
     latest_label = data.get("label")
     latest_frame = data.get("frame")
+    # Emit to all connected clients
     socketio.emit("new_frame", {"label": latest_label, "frame": latest_frame})
     return jsonify({"status": "ok"}), 200
 
+# === Frontend page ===
 @app.route("/")
 def index():
     return render_template_string("""
     <html>
-    <head><title>Live Detection</title></head>
-    <body style="text-align:center;background:#111;color:#eee;">
+    <head>
+        <title>Live Chicken Disease Monitor</title>
+    </head>
+    <body style="text-align:center;background:#111;color:#eee;font-family:sans-serif;">
         <h2>🐔 Chicken Disease Monitor</h2>
         <img id="video" style="width:80%;border-radius:12px;box-shadow:0 0 10px #fff;">
         <h3 id="label">Waiting for data...</h3>
         <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
         <script>
-            const socket = io();
+            const socket = io({ transports: ["websocket"] });
             socket.on("new_frame", data => {
                 document.getElementById("video").src = "data:image/jpeg;base64," + data.frame;
                 document.getElementById("label").innerText = "Detected: " + data.label;
@@ -37,5 +48,7 @@ def index():
     </html>
     """)
 
+# === Run server with Eventlet ===
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=8000)
+    import eventlet
+    socketio.run(app, host="0.0.0.0", port=8000, debug=True)
