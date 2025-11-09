@@ -12,7 +12,7 @@ app.wsgi_app = ProxyFix(app.wsgi_app)
 # === SocketIO setup ===
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
-# === Shared data ===
+# === Shared state ===
 latest_frame = None
 latest_label = None
 pi_start_trigger = {"start": False}
@@ -24,34 +24,47 @@ def receive_frame():
     label = request.form.get("label")
     confidence = request.form.get("confidence")
     image_file = request.files.get("image")
-    if image_file:
-        import base64
-        latest_frame = base64.b64encode(image_file.read()).decode("utf-8")
-        latest_label = f"{label} ({float(confidence):.2f})"
-        socketio.emit("new_frame", {"label": latest_label, "frame": latest_frame})
-        return jsonify({"status": "ok"}), 200
-    return jsonify({"status": "error", "message": "No image received"}), 400
 
-# === API: Pi client checks if it should start ===
+    if not image_file:
+        return jsonify({"status": "error", "message": "No image received"}), 400
+
+    import base64
+    latest_frame = base64.b64encode(image_file.read()).decode("utf-8")
+    latest_label = f"{label} ({float(confidence):.2f})"
+
+    # Broadcast to frontend
+    socketio.emit("new_frame", {"label": latest_label, "frame": latest_frame})
+    return jsonify({"status": "ok"}), 200
+
+
+# === API: Pi checks if it should start ===
 @app.route("/check-start", methods=["GET"])
 def check_start():
-    return jsonify(pi_start_trigger), 200
+    if pi_start_trigger["start"]:
+        # Reset trigger immediately after Pi receives it
+        pi_start_trigger["start"] = False
+        print("🚀 Pi client START confirmed and reset")
+        return jsonify({"start": True}), 200
+    return jsonify({"start": False}), 200
+
 
 # === API: Trigger start from frontend ===
 @app.route("/trigger-pi", methods=["POST"])
 def trigger_pi():
     pi_start_trigger["start"] = True
     print("🚀 Pi client START triggered")
-    return jsonify({"status": "ok", "message": "Pi client started"}), 200
+    return jsonify({"status": "ok", "message": "Pi client start signal sent"}), 200
+
 
 # === API: Stop trigger ===
 @app.route("/reset-pi", methods=["POST"])
 def reset_pi():
     pi_start_trigger["start"] = False
     print("🛑 Pi client STOP triggered")
-    return jsonify({"status": "ok", "message": "Pi client stopped"}), 200
+    return jsonify({"status": "ok", "message": "Pi client stop signal sent"}), 200
 
-# === Frontend ===
+
+# === Frontend UI ===
 @app.route("/")
 def index():
     return render_template_string("""
@@ -89,14 +102,14 @@ def index():
                 fetch("/trigger-pi", { method: "POST" })
                     .then(res => res.json())
                     .then(data => alert(data.message))
-                    .catch(err => alert("Error triggering Pi client"));
+                    .catch(() => alert("Error triggering Pi client"));
             }
 
             function stopPi() {
                 fetch("/reset-pi", { method: "POST" })
                     .then(res => res.json())
                     .then(data => alert(data.message))
-                    .catch(err => alert("Error stopping Pi client"));
+                    .catch(() => alert("Error stopping Pi client"));
             }
         </script>
     </body>

@@ -6,8 +6,8 @@ from picamera2 import Picamera2
 from tflite_runtime.interpreter import Interpreter
 
 # ==== CONFIG ====
-BACKEND_URL = "http://192.168.100.45:8000/api/frame"
-CHECK_START_URL = "http://192.168.100.45:8000/check-start"
+BACKEND_URL = "https://chicken-disease-detector-app.onrender.com/api/frame"
+CHECK_START_URL = "https://chicken-disease-detector-app.onrender.com/check-start"
 MODEL_PATH = "chicken_disease_classifier_vgg16.tflite"
 CAPTURE_INTERVAL = 5  # seconds between captures
 PING_INTERVAL = 2     # seconds between start checks
