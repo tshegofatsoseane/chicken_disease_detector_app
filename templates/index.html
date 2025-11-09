@@ -22,7 +22,7 @@
     <div class="space-x-3">
       <button class="btn-secondary">⚙️ Settings</button>
       <button class="btn-secondary">📶 Connection</button>
-      <button class="btn-secondary">🚪 Logout</button>
+      <a href="{{ url_for('logout') }}" class="btn-secondary">🚪 Logout</a>
     </div>
   </header>
 
@@ -33,7 +33,6 @@
       <h2 class="font-semibold text-lg mb-2">Live Detection</h2>
       <p class="text-sm text-gray-500 mb-4">Monitor, capture, and analyze live poultry health data.</p>
 
-      <!-- Feed Container -->
       <div id="live-container" class="flex flex-col items-center justify-center border border-dashed border-purple-300 rounded-xl p-6 bg-gray-100 relative" style="min-height: 420px;">
         <img id="video" alt="Live Feed" class="rounded-xl shadow-md w-full max-h-[400px] object-contain hidden">
         <div id="placeholder" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400">
@@ -69,7 +68,7 @@
       <div>
         <h3 class="font-semibold mb-2 text-purple-700">3️⃣ Detection History</h3>
         <ul id="history-list" class="space-y-3 text-sm text-gray-600 max-h-64 overflow-y-auto">
-          <li class="text-gray-400 italic">No detections yet.</li>
+          <li class="text-gray-400 italic">Loading history...</li>
         </ul>
       </div>
 
@@ -97,11 +96,9 @@
       </div>
 
       <div class="flex space-x-6">
-        <!-- Image -->
         <div class="w-1/2 flex justify-center items-center bg-gray-100 rounded-xl p-3">
           <img id="modal-image" class="rounded-xl border border-gray-300 shadow-sm max-h-[280px] object-contain" alt="Captured Frame">
         </div>
-        <!-- Info -->
         <div id="modal-content" class="flex-1 space-y-4 text-gray-700 overflow-y-auto pr-2"></div>
       </div>
 
@@ -119,34 +116,23 @@
     const video = document.getElementById("video");
     const placeholder = document.getElementById("placeholder");
     const label = document.getElementById("label");
-    const history = [];
+    let history = [];
 
     const DISEASES = {
-      0: {
-        name: 'Avian Influenza',
-        severity: 'critical',
-        description: 'Highly contagious viral infection detected.',
-        nextSteps: ['IMMEDIATE QUARANTINE', 'Contact veterinarian urgently', 'Notify authorities', 'Test all birds'],
-        care: {
-          immediate: 'Isolate infected birds immediately.',
-          daily: 'Monitor all birds for symptoms.',
-          weekly: 'Continue health surveillance.',
-          prevention: 'Vaccinate and maintain strict biosecurity.'
-        }
-      },
-      1: {
-        name: 'Gumboro Disease',
-        severity: 'warning',
-        description: 'Affects immune system, common in young chickens.',
-        nextSteps: ['Isolate affected birds', 'Contact vet'],
-        care: {
-          immediate: 'Provide clean environment.',
-          daily: 'Hydration and nutrition.',
-          weekly: 'Vaccination schedule check.',
-          prevention: 'Stress reduction and hygiene.'
-        }
-      }
+      0: { name: 'Avian Influenza', severity: 'critical', description: 'Highly contagious viral infection detected.',
+           nextSteps: ['IMMEDIATE QUARANTINE', 'Contact veterinarian urgently', 'Notify authorities', 'Test all birds'],
+           care: { immediate:'Isolate infected birds immediately.', daily:'Monitor all birds for symptoms.', weekly:'Continue health surveillance.', prevention:'Vaccinate and maintain strict biosecurity.'} },
+      1: { name: 'Gumboro Disease', severity: 'warning', description: 'Affects immune system, common in young chickens.',
+           nextSteps: ['Isolate affected birds', 'Contact vet'],
+           care: { immediate:'Provide clean environment.', daily:'Hydration and nutrition.', weekly:'Vaccination schedule check.', prevention:'Stress reduction and hygiene.'} }
     };
+
+    // Load history from DB
+    async function loadHistory() {
+      const res = await fetch("/get-history");
+      history = await res.json();
+      renderHistory();
+    }
 
     socket.on("new_frame", d => {
       if (isLive) {
@@ -183,43 +169,15 @@
       showReport(disease, d.confidence);
     });
 
-    function triggerPi() {
-      fetch("/trigger-pi", { method: "POST" });
-      isLive = true; hasCapture = false;
-      label.innerText = "🔄 Starting feed...";
-      toggleButtons(false);
-    }
-
-    function stopPi() {
-      fetch("/reset-pi", { method: "POST" });
-      isLive = false;
-      label.innerText = "🛑 Feed stopped.";
-      toggleButtons(true);
-      placeholder.classList.remove("hidden");
-      video.classList.add("hidden");
-    }
-
-    function captureFrame() {
-      fetch("/capture-frame", { method: "POST" })
-        .then(() => fetch("/reset-pi", { method: "POST" }));
-    }
-
-    function analyzeFrame() {
-      if (!hasCapture) return alert("Please capture a frame first!");
-      showLoading();
-      fetch("/analyze-frame", { method: "POST" });
-    }
-
-    function toggleButtons(enable) {
-      document.getElementById("start").disabled = !enable;
-      document.getElementById("stop").disabled = enable;
-      document.getElementById("capture").disabled = enable;
-    }
-
-    function openModal() { document.getElementById("analysis-modal").classList.remove("hidden"); }
-    function closeModal() { document.getElementById("analysis-modal").classList.add("hidden"); }
-    function showLoading() { document.getElementById("loading-overlay").classList.remove("hidden"); }
-    function closeLoading() { document.getElementById("loading-overlay").classList.add("hidden"); }
+    function triggerPi() { fetch("/trigger-pi", { method:"POST" }); isLive=true; hasCapture=false; label.innerText="🔄 Starting feed..."; toggleButtons(false); }
+    function stopPi() { fetch("/reset-pi", { method:"POST" }); isLive=false; label.innerText="🛑 Feed stopped."; toggleButtons(true); placeholder.classList.remove("hidden"); video.classList.add("hidden"); }
+    function captureFrame() { fetch("/capture-frame", { method:"POST" }).then(()=>fetch("/reset-pi", { method:"POST" })); }
+    function analyzeFrame() { if(!hasCapture) return alert("Capture a frame first!"); showLoading(); fetch("/analyze-frame", { method:"POST" }); }
+    function toggleButtons(enable) { document.getElementById("start").disabled=!enable; document.getElementById("stop").disabled=enable; document.getElementById("capture").disabled=enable; }
+    function openModal(){ document.getElementById("analysis-modal").classList.remove("hidden"); }
+    function closeModal(){ document.getElementById("analysis-modal").classList.add("hidden"); }
+    function showLoading(){ document.getElementById("loading-overlay").classList.remove("hidden"); }
+    function closeLoading(){ document.getElementById("loading-overlay").classList.add("hidden"); }
 
     function showReport(disease, confidence) {
       const modalContent = document.getElementById("modal-content");
@@ -231,7 +189,7 @@
           <p class="text-gray-500">${disease.description}</p>
           <h4 class="mt-3 font-semibold text-purple-700">Next Steps</h4>
           <ul class="list-disc list-inside text-gray-700">
-            ${disease.nextSteps.map(s => `<li>${s}</li>`).join('')}
+            ${disease.nextSteps.map(s=>`<li>${s}</li>`).join('')}
           </ul>
           <h4 class="mt-3 font-semibold text-purple-700">Care Plan</h4>
           <ul class="list-disc list-inside text-gray-700">
@@ -240,86 +198,77 @@
             <li><strong>Weekly:</strong> ${disease.care.weekly}</li>
             <li><strong>Prevention:</strong> ${disease.care.prevention}</li>
           </ul>
-          <p class="mt-3 text-sm font-semibold text-gray-600">Confidence: ${(confidence * 100).toFixed(1)}%</p>
+          <p class="mt-3 text-sm font-semibold text-gray-600">Confidence: ${(confidence*100).toFixed(1)}%</p>
         </div>`;
-
       const badge = document.getElementById("severity-badge");
       badge.textContent = disease.severity.toUpperCase();
-      badge.className = disease.severity === 'critical'
-        ? "px-3 py-1 rounded-full bg-red-600 text-white text-sm font-medium"
-        : "px-3 py-1 rounded-full bg-yellow-500 text-white text-sm font-medium";
-
+      badge.className = disease.severity==='critical'?"px-3 py-1 rounded-full bg-red-600 text-white text-sm font-medium":"px-3 py-1 rounded-full bg-yellow-500 text-white text-sm font-medium";
       openModal();
     }
 
-    function saveToHistory() {
-      if (!latestReport) return;
+    async function saveToHistory(){
+      if(!latestReport) return;
       const { disease, confidence, image } = latestReport;
-      const timestamp = new Date().toLocaleString();
-      history.unshift({ disease, confidence, image, timestamp });
-      renderHistory();
+      const record = { disease, confidence, image, timestamp:new Date().toISOString() };
+      await fetch("/save-result",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(record) });
+      loadHistory();
       closeModal();
     }
 
-    function renderHistory() {
-      if (history.length === 0) {
-        historyList.innerHTML = '<li class="text-gray-400 italic">No detections yet.</li>';
+    function renderHistory(){
+      if(history.length===0){
+        historyList.innerHTML='<li class="text-gray-400 italic">No detections yet.</li>';
         return;
       }
-      historyList.innerHTML = history.map((h, i) => `
-        <li class="flex items-center space-x-3 p-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer" onclick="viewHistory(${i})">
+      historyList.innerHTML = history.map((h,i)=>`
+        <li class="flex items-center space-x-3 p-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer" onclick='viewHistory(${i})'>
           <img src="${h.image}" class="w-12 h-12 rounded-lg object-cover border" alt="">
           <div class="flex-1">
             <p class="font-medium text-gray-800">${h.disease.name}</p>
-            <p class="text-xs text-gray-500">${h.timestamp}</p>
+            <p class="text-xs text-gray-500">${new Date(h.timestamp).toLocaleString()}</p>
           </div>
-          <span class="${h.disease.severity === 'critical' ? 'text-red-500' : 'text-yellow-500'} font-semibold text-sm">${(h.confidence * 100).toFixed(0)}%</span>
-        </li>
-      `).join('');
+          <span class="${h.disease.severity==='critical'?'text-red-500':'text-yellow-500'} font-semibold text-sm">${(h.confidence*100).toFixed(0)}%</span>
+        </li>`).join('');
     }
 
-    function viewHistory(index) {
+    function viewHistory(index){
       const record = history[index];
-      if (!record) return;
-      latestReport = record;
+      if(!record) return;
+      latestReport=record;
       showReport(record.disease, record.confidence);
     }
 
-    async function downloadPDF() {
-      if (!latestReport) return;
+    async function downloadPDF(){
+      if(!latestReport) return;
       const { jsPDF } = window.jspdf;
       const pdf = new jsPDF();
       const { disease, confidence, image } = latestReport;
 
-      // Add logo
       const logo = new Image();
       logo.src = "{{ url_for('static', filename='applogo.png') }}";
-      await new Promise(r => { logo.onload = r; });
-      pdf.addImage(logo, 'PNG', 160, 10, 40, 20);
+      await new Promise(r=>{logo.onload=r;});
+      pdf.addImage(logo,'PNG',160,10,40,20);
 
-      pdf.setFontSize(18);
-      pdf.text("Kgosi BioDrone AI Analysis Report", 20, 25);
-
-      if (image) pdf.addImage(image, 'JPEG', 20, 35, 70, 50);
-
-      pdf.setFontSize(12);
-      let y = 90;
-      pdf.text(`Disease Detected: ${disease.name}`, 20, y);
-      pdf.text(`Severity Level: ${disease.severity.toUpperCase()}`, 20, y + 10);
-      pdf.text(`Confidence: ${(confidence * 100).toFixed(1)}%`, 20, y + 20);
-      pdf.text("Description:", 20, y + 35);
-      pdf.text(disease.description, 25, y + 43, { maxWidth: 170 });
-      pdf.text("Next Steps:", 20, y + 60);
-      disease.nextSteps.forEach((s, i) => pdf.text(`• ${s}`, 25, y + 70 + i * 8));
-      pdf.text("Care Instructions:", 20, y + 110);
-      let yPos = y + 120;
-      for (const [k, v] of Object.entries(disease.care)) {
-        pdf.text(`${k[0].toUpperCase() + k.slice(1)}: ${v}`, 25, yPos, { maxWidth: 170 });
-        yPos += 8;
+      pdf.setFontSize(18); pdf.text("Kgosi BioDrone AI Analysis Report",20,25);
+      if(image) pdf.addImage(image,'JPEG',20,35,70,50);
+      pdf.setFontSize(12); let y=90;
+      pdf.text(`Disease Detected: ${disease.name}`,20,y);
+      pdf.text(`Severity Level: ${disease.severity.toUpperCase()}`,20,y+10);
+      pdf.text(`Confidence: ${(confidence*100).toFixed(1)}%`,20,y+20);
+      pdf.text("Description:",20,y+35);
+      pdf.text(disease.description,25,y+43,{maxWidth:170});
+      pdf.text("Next Steps:",20,y+60);
+      disease.nextSteps.forEach((s,i)=>pdf.text(`• ${s}`,25,y+70+i*8));
+      pdf.text("Care Instructions:",20,y+110);
+      let yPos=y+120;
+      for(const[k,v] of Object.entries(disease.care)){
+        pdf.text(`${k[0].toUpperCase()+k.slice(1)}: ${v}`,25,yPos,{maxWidth:170});
+        yPos+=8;
       }
-
-      pdf.save(`${disease.name.replace(/\s+/g, "_")}_Report.pdf`);
+      pdf.save(`${disease.name.replace(/\s+/g,"_")}_Report.pdf`);
     }
+
+    loadHistory();
   </script>
 </body>
 </html>

@@ -182,3 +182,127 @@ aside button {
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
+
+/* === Buttons === */
+button {
+  transition: all 0.2s ease-in-out;
+  font-weight: 500;
+  border-radius: 0.75rem;
+  padding: 0.55rem 1.2rem;
+  font-size: 0.9rem;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background-color: #7c3aed;
+  color: white;
+  box-shadow: 0 2px 6px rgba(124, 58, 237, 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #6d28d9;
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background-color: #f3f4f6;
+  color: #374151;
+  border: 1px solid #e5e7eb;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: #e5e7eb;
+  transform: translateY(-1px);
+}
+
+.btn-warning {
+  background-color: #fbbf24;
+  color: #111827;
+  box-shadow: 0 2px 6px rgba(251, 191, 36, 0.4);
+}
+
+.btn-warning:hover:not(:disabled) {
+  background-color: #f59e0b;
+  transform: translateY(-1px);
+}
+
+.btn-danger {
+  background-color: #ef4444;
+  color: white;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.4);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background-color: #dc2626;
+  transform: translateY(-1px);
+}
+
+/* === Loader === */
+.loader {
+  border: 5px solid rgba(255, 255, 255, 0.3);
+  border-top: 5px solid #8b5cf6;
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* === Modal === */
+#analysis-modal {
+  backdrop-filter: blur(4px);
+}
+
+#analysis-modal .bg-white {
+  animation: modalFadeIn 0.25s ease-in-out;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* === Scrollbar === */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background-color: #c4b5fd;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: #a78bfa;
+}
+
+/* === History Hover === */
+#history-list li:hover {
+  border-color: #c4b5fd;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+/* === Placeholder Animations === */
+#placeholder svg {
+  animation: pulse 1.8s infinite ease-in-out;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.05); }
+}
+
+/* === Smooth Fade for Feed Image === */
+#video {
+  transition: opacity 0.3s ease;
+}
+
+.hidden {
+  opacity: 0;
+}

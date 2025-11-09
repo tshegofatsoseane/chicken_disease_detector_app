@@ -52,3 +52,5 @@ Thumbs.db
 
 # Local files
 *.local
+
+.env
