@@ -6,12 +6,12 @@ from picamera2 import Picamera2
 from tflite_runtime.interpreter import Interpreter
 
 # ==== CONFIG ====
-LOCAL_BACKEND = "https://chicken-disease-detector-app.onrender.com"
-BACKEND_URL = f"{LOCAL_BACKEND}/api/frame"
-CHECK_START_URL = f"{LOCAL_BACKEND}/check-start"
+BACKEND_URL = "https://chicken-disease-detector-app.onrender.com/api/frame"
+CHECK_START_URL = "https://chicken-disease-detector-app.onrender.com/check-start"
 MODEL_PATH = "chicken_disease_classifier_vgg16.tflite"
-CAPTURE_INTERVAL = 0.3    # seconds between captures
-CAMERA_SIZE = (640, 480)
+CAPTURE_INTERVAL = 1.0  # seconds between frames
+NETWORK_RETRY = 5       # seconds between network retries
+CAMERA_RETRY = 2        # seconds between camera retries
 
 # ==== LOAD MODEL ====
 interpreter = Interpreter(model_path=MODEL_PATH)
@@ -21,7 +21,7 @@ output_details = interpreter.get_output_details()
 IMG_SIZE = (input_details[0]['shape'][2], input_details[0]['shape'][1])
 print(f"🧪 Model expects input size: {IMG_SIZE}")
 
-# ==== FUNCTIONS ====
+# ==== HELPER FUNCTIONS ====
 def preprocess_frame(frame):
     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGRA2RGB)
     frame_resized = cv2.resize(frame_rgb, IMG_SIZE)
@@ -37,72 +37,92 @@ def predict_disease(frame):
     confidence = float(np.max(output_data))
     return pred_class, confidence
 
-def send_to_backend(image, label, confidence):
+def send_to_backend(image, label, confidence, retries=3):
     h, w, _ = image.shape
     cv2.rectangle(image, (10, 10), (w-10, h-10), (0, 255, 0), 2)
-
     _, img_encoded = cv2.imencode('.jpg', image)
     files = {'image': ('frame.jpg', img_encoded.tobytes(), 'image/jpeg')}
     data = {'label': str(label), 'confidence': confidence}
 
-    try:
-        r = requests.post(BACKEND_URL, files=files, data=data, timeout=5)
-        if r.status_code == 200:
-            print(f"✅ Sent: {label} ({confidence:.2f})")
-        else:
-            print(f"❌ Backend error: {r.status_code}")
-    except Exception as e:
-        print("⚠️ Failed to send data:", e)
+    for attempt in range(1, retries + 1):
+        try:
+            r = requests.post(BACKEND_URL, files=files, data=data, timeout=10)
+            if r.status_code == 200:
+                print(f"✅ Sent: {label} ({confidence:.2f})")
+                return True
+            else:
+                print(f"⚠️ Backend error: {r.status_code}")
+        except Exception as e:
+            print(f"⚠️ Attempt {attempt} failed to send data:", e)
+        time.sleep(2 ** attempt)  # exponential backoff
+    return False
 
 # ==== MAIN LOOP ====
 picam2 = None
-camera_initialized = False
 
 try:
     while True:
-        # Check start signal from server
+        # Check start/stop signal
+        feed_on = False
         try:
-            r = requests.get(CHECK_START_URL, timeout=2)
+            r = requests.get(CHECK_START_URL, timeout=5)
             feed_on = r.json().get("start", False)
         except Exception as e:
             print("⚠️ Error checking start signal:", e)
-            feed_on = False
+            time.sleep(NETWORK_RETRY)
+            continue
 
         if feed_on:
-            # Lazy initialize camera
-            if not camera_initialized:
-                while True:
-                    try:
-                        picam2 = Picamera2()
-                        config = picam2.create_preview_configuration(main={"size": CAMERA_SIZE})
-                        picam2.configure(config)
-                        picam2.start()
-                        camera_initialized = True
-                        print("📸 Camera initialized and ready!")
-                        break
-                    except RuntimeError:
-                        print("⚠️ Camera busy, retrying in 2 seconds...")
-                        time.sleep(2)
+            # Initialize camera if not already running
+            if picam2 is None:
+                try:
+                    picam2 = Picamera2()
+                    config = picam2.create_preview_configuration(main={"size": (640, 480)})
+                    picam2.configure(config)
+                    picam2.start()
+                    time.sleep(2)
+                    print("📸 Camera initialized and ready!")
+                except Exception as e:
+                    print("⚠️ Camera busy, retrying...", e)
+                    if picam2 is not None:
+                        try: picam2.stop()
+                        except: pass
+                        picam2 = None
+                    time.sleep(CAMERA_RETRY)
+                    continue
 
-            # Capture and predict
-            frame = picam2.capture_array()
-            label, confidence = predict_disease(frame)
-            print(f"🖼 Prediction: {label} ({confidence:.2f})")
-            send_to_backend(frame, label, confidence)
+            # Capture frame and predict
+            try:
+                frame = picam2.capture_array()
+                label, confidence = predict_disease(frame)
+                print(f"🖼 Prediction: {label} ({confidence:.2f})")
+                send_to_backend(frame, label, confidence)
+            except Exception as e:
+                print("⚠️ Error capturing or sending frame:", e)
+                if picam2 is not None:
+                    try: picam2.stop()
+                    except: pass
+                    picam2 = None
+            time.sleep(CAPTURE_INTERVAL)
 
         else:
-            if camera_initialized:
-                picam2.stop()
-                picam2 = None
-                camera_initialized = False
-                print("⏸ Camera stopped. Waiting for start signal...")
-
-        time.sleep(CAPTURE_INTERVAL)
+            # Stop camera if feed turned off
+            if picam2 is not None:
+                try:
+                    picam2.stop()
+                    picam2 = None
+                    print("⏸ Camera stopped. Waiting for start signal...")
+                except Exception as e:
+                    print("⚠️ Error stopping camera:", e)
+            time.sleep(1)
 
 except KeyboardInterrupt:
-    print("\n🛑 Stopped by user.")
+    print("\n🛑 Stopped by user")
 
 finally:
-    if picam2:
-        picam2.stop()
-        print("📴 Camera stopped.")
+    if picam2 is not None:
+        try:
+            picam2.stop()
+            print("📷 Camera released.")
+        except:
+            pass
