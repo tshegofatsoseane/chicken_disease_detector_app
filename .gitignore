@@ -1,0 +1,54 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.chicken-venv/
+venv/
+env/
+.venv/
+
+# Mac system files
+.DS_Store
+
+# Logs
+*.log
+
+# Database files
+*.sqlite3
+
+# Django / Python specific
+*.pyc
+*.pyo
+*.pyd
+*.swp
+
+# VS Code / IDE
+.vscode/
+.idea/
+
+# Environment variables
+.env
+
+# TensorFlow / ML model files (optional)
+*.tflite
+*.h5
+*.ckpt
+
+# Numpy / cache files
+*.npy
+*.npz
+
+# Coverage reports
+htmlcov/
+.coverage
+coverage.xml
+nosetests.xml
+pytest_cache/
+
+# Other system files
+Thumbs.db
+
+# Local files
+*.local
