@@ -1,3 +1,6 @@
+import eventlet
+eventlet.monkey_patch()
+
 from flask import Flask, request, jsonify, render_template_string
 from flask_socketio import SocketIO, emit
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -52,3 +55,4 @@ def index():
 if __name__ == "__main__":
     import eventlet
     socketio.run(app, host="0.0.0.0", port=8000, debug=True)
+
