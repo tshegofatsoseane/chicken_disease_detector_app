@@ -16,17 +16,18 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 # === Shared state ===
 latest_frame = None
 captured_frame = None
-latest_label = None
 pi_start_trigger = {"start": False}
 
 
 # === API ===
 @app.route("/api/frame", methods=["POST"])
 def receive_frame():
+    """Receive frame from Pi and emit to frontend."""
     global latest_frame
     image_file = request.files.get("image")
     if not image_file:
         return jsonify({"status": "error", "message": "No image received"}), 400
+
     latest_frame = base64.b64encode(image_file.read()).decode("utf-8")
     socketio.emit("new_frame", {"frame": latest_frame})
     return jsonify({"status": "ok"}), 200
@@ -34,6 +35,7 @@ def receive_frame():
 
 @app.route("/trigger-pi", methods=["POST"])
 def trigger_pi():
+    """Trigger Pi to start sending frames."""
     pi_start_trigger["start"] = True
     print("🚀 Pi client START triggered")
     return jsonify({"status": "ok", "message": "Pi feed started"}), 200
@@ -41,6 +43,7 @@ def trigger_pi():
 
 @app.route("/reset-pi", methods=["POST"])
 def reset_pi():
+    """Stop Pi frame feed."""
     pi_start_trigger["start"] = False
     print("🛑 Pi client STOP triggered")
     socketio.emit("pi_stopped")
@@ -49,11 +52,13 @@ def reset_pi():
 
 @app.route("/check-start", methods=["GET"])
 def check_start():
+    """Check if Pi should be running."""
     return jsonify({"start": pi_start_trigger["start"]}), 200
 
 
 @app.route("/capture-frame", methods=["POST"])
 def capture_frame():
+    """Capture current frame for analysis."""
     global captured_frame, latest_frame
     if latest_frame:
         captured_frame = latest_frame
@@ -65,12 +70,26 @@ def capture_frame():
 
 @app.route("/analyze-frame", methods=["POST"])
 def analyze_frame():
-    global captured_frame, latest_label
+    """Analyze the captured frame and send results to frontend."""
+    global captured_frame
     if not captured_frame:
         return jsonify({"status": "error", "message": "No captured frame"}), 400
-    latest_label = "Healthy (0.95)"  # Placeholder — replace with real model result
-    socketio.emit("frame_analyzed", {"label": latest_label})
-    return jsonify({"status": "ok", "label": latest_label}), 200
+
+    # === Placeholder prediction ===
+    disease_id = 0         # Example: 0 = avian influenza
+    confidence = 0.95      # Example confidence
+
+    # Emit structured data to frontend modal
+    socketio.emit("frame_analyzed", {
+        "disease_id": disease_id,
+        "confidence": confidence
+    })
+
+    return jsonify({
+        "status": "ok",
+        "disease_id": disease_id,
+        "confidence": confidence
+    }), 200
 
 
 # === Frontend ===
@@ -80,7 +99,6 @@ def index():
 
 
 if __name__ == "__main__":
-    # Get port from Render environment variable
     port = int(os.environ.get("PORT", 8000))
     print(f"🚀 Starting server on 0.0.0.0:{port}")
     socketio.run(app, host="0.0.0.0", port=port)
