@@ -7,7 +7,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 # === Flask app setup ===
 app = Flask(__name__)
-app.wsgi_app = ProxyFix(app.wsgi_app)  # Needed if behind a proxy (like Render)
+app.wsgi_app = ProxyFix(app.wsgi_app)
 
 # === SocketIO setup ===
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
@@ -16,23 +16,34 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 latest_frame = None
 latest_label = None
 
+# === Global trigger flag for Pi client ===
+pi_start_trigger = {"start": False}
+
 # === API endpoint to receive frames ===
 @app.route("/api/frame", methods=["POST"])
 def receive_frame():
     global latest_frame, latest_label
-    # Receive multipart/form-data from Pi
     label = request.form.get("label")
     confidence = request.form.get("confidence")
     image_file = request.files.get("image")
     if image_file:
-        # Convert image to base64 for frontend display
         import base64
         latest_frame = base64.b64encode(image_file.read()).decode("utf-8")
         latest_label = f"{label} ({float(confidence):.2f})"
-        # Emit to all connected clients
         socketio.emit("new_frame", {"label": latest_label, "frame": latest_frame})
         return jsonify({"status": "ok"}), 200
     return jsonify({"status": "error", "message": "No image received"}), 400
+
+# === Endpoint for Pi client to check if it should start ===
+@app.route("/check-start", methods=["GET"])
+def check_start():
+    return jsonify(pi_start_trigger), 200
+
+# === Endpoint to trigger Pi client from frontend ===
+@app.route("/trigger-pi", methods=["POST"])
+def trigger_pi():
+    pi_start_trigger["start"] = True
+    return jsonify({"status": "ok", "message": "Pi client triggered"}), 200
 
 # === Frontend page ===
 @app.route("/")
@@ -44,12 +55,15 @@ def index():
         <style>
             body { text-align:center; background:#111; color:#eee; font-family:sans-serif; }
             img { width:80%; border-radius:12px; box-shadow:0 0 10px #fff; margin-top:20px; }
+            button { padding:10px 20px; margin-top:15px; font-size:16px; cursor:pointer; border-radius:6px; background:#4CAF50; color:white; border:none; }
+            button:hover { background:#45a049; }
         </style>
     </head>
     <body>
         <h2>🐔 Chicken Disease Monitor</h2>
         <img id="video" src="" alt="Live feed">
         <h3 id="label">Waiting for data...</h3>
+        <button onclick="triggerPi()">Start Pi Client</button>
 
         <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
         <script>
@@ -58,6 +72,13 @@ def index():
                 document.getElementById("video").src = "data:image/jpeg;base64," + data.frame;
                 document.getElementById("label").innerText = "Detected: " + data.label;
             });
+
+            function triggerPi() {
+                fetch("/trigger-pi", { method: "POST" })
+                    .then(res => res.json())
+                    .then(data => alert(data.message))
+                    .catch(err => alert("Error triggering Pi client"));
+            }
         </script>
     </body>
     </html>
