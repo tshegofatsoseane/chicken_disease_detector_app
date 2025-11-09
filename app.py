@@ -32,7 +32,7 @@ def receive_frame():
     latest_frame = base64.b64encode(image_file.read()).decode("utf-8")
     latest_label = f"{label} ({float(confidence):.2f})"
 
-    # Broadcast to frontend
+    # Broadcast frame to all connected clients
     socketio.emit("new_frame", {"label": latest_label, "frame": latest_frame})
     return jsonify({"status": "ok"}), 200
 
@@ -41,14 +41,14 @@ def receive_frame():
 @app.route("/check-start", methods=["GET"])
 def check_start():
     if pi_start_trigger["start"]:
-        # Reset trigger immediately after Pi receives it
+        # Reset after Pi acknowledges start
         pi_start_trigger["start"] = False
         print("🚀 Pi client START confirmed and reset")
         return jsonify({"start": True}), 200
     return jsonify({"start": False}), 200
 
 
-# === API: Trigger start from frontend ===
+# === API: Trigger start ===
 @app.route("/trigger-pi", methods=["POST"])
 def trigger_pi():
     pi_start_trigger["start"] = True
@@ -61,6 +61,8 @@ def trigger_pi():
 def reset_pi():
     pi_start_trigger["start"] = False
     print("🛑 Pi client STOP triggered")
+    # Also tell frontend to clear display
+    socketio.emit("pi_stopped")
     return jsonify({"status": "ok", "message": "Pi client stop signal sent"}), 200
 
 
@@ -93,9 +95,16 @@ def index():
         <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
         <script>
             const socket = io({ transports: ["websocket"] });
+            
             socket.on("new_frame", data => {
                 document.getElementById("video").src = "data:image/jpeg;base64," + data.frame;
                 document.getElementById("label").innerText = "Detected: " + data.label;
+            });
+
+            // Clear image and label when Pi stops
+            socket.on("pi_stopped", () => {
+                document.getElementById("video").src = "";
+                document.getElementById("label").innerText = "🛑 Feed stopped. Waiting for new start signal...";
             });
 
             function triggerPi() {
