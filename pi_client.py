@@ -6,18 +6,12 @@ from picamera2 import Picamera2
 from tflite_runtime.interpreter import Interpreter
 
 # ==== CONFIG ====
-BACKEND_URL = "http://192.168.100.73:8000/api/frame"
-CHECK_START_URL = "http://192.168.100.73:8000/check-start"
+LOCAL_BACKEND = "http://192.168.100.73:8000"
+BACKEND_URL = f"{LOCAL_BACKEND}/api/frame"
+CHECK_START_URL = f"{LOCAL_BACKEND}/check-start"
 MODEL_PATH = "chicken_disease_classifier_vgg16.tflite"
 CAPTURE_INTERVAL = 0.3    # seconds between captures
-
-# ==== INITIALIZE CAMERA ====
-picam2 = Picamera2()
-config = picam2.create_preview_configuration(main={"size": (640, 480)})
-picam2.configure(config)
-picam2.start()
-time.sleep(2)
-print("📸 Camera ready, waiting for start signal...")
+CAMERA_SIZE = (640, 480)
 
 # ==== LOAD MODEL ====
 interpreter = Interpreter(model_path=MODEL_PATH)
@@ -44,13 +38,13 @@ def predict_disease(frame):
     return pred_class, confidence
 
 def send_to_backend(image, label, confidence):
-    # Optional: Draw a green rectangle around the whole image
     h, w, _ = image.shape
     cv2.rectangle(image, (10, 10), (w-10, h-10), (0, 255, 0), 2)
 
     _, img_encoded = cv2.imencode('.jpg', image)
     files = {'image': ('frame.jpg', img_encoded.tobytes(), 'image/jpeg')}
     data = {'label': str(label), 'confidence': confidence}
+
     try:
         r = requests.post(BACKEND_URL, files=files, data=data, timeout=5)
         if r.status_code == 200:
@@ -61,9 +55,12 @@ def send_to_backend(image, label, confidence):
         print("⚠️ Failed to send data:", e)
 
 # ==== MAIN LOOP ====
+picam2 = None
+camera_initialized = False
+
 try:
     while True:
-        # Check start/stop signal from server
+        # Check start signal from server
         try:
             r = requests.get(CHECK_START_URL, timeout=2)
             feed_on = r.json().get("start", False)
@@ -72,12 +69,33 @@ try:
             feed_on = False
 
         if feed_on:
+            # Lazy initialize camera
+            if not camera_initialized:
+                while True:
+                    try:
+                        picam2 = Picamera2()
+                        config = picam2.create_preview_configuration(main={"size": CAMERA_SIZE})
+                        picam2.configure(config)
+                        picam2.start()
+                        camera_initialized = True
+                        print("📸 Camera initialized and ready!")
+                        break
+                    except RuntimeError:
+                        print("⚠️ Camera busy, retrying in 2 seconds...")
+                        time.sleep(2)
+
+            # Capture and predict
             frame = picam2.capture_array()
             label, confidence = predict_disease(frame)
             print(f"🖼 Prediction: {label} ({confidence:.2f})")
             send_to_backend(frame, label, confidence)
+
         else:
-            print("⏸ Feed stopped. Waiting for start signal...")
+            if camera_initialized:
+                picam2.stop()
+                picam2 = None
+                camera_initialized = False
+                print("⏸ Camera stopped. Waiting for start signal...")
 
         time.sleep(CAPTURE_INTERVAL)
 
@@ -85,5 +103,6 @@ except KeyboardInterrupt:
     print("\n🛑 Stopped by user.")
 
 finally:
-    picam2.stop()
-    print("📴 Camera stopped.")
+    if picam2:
+        picam2.stop()
+        print("📴 Camera stopped.")
