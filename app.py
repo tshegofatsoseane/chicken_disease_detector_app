@@ -1,9 +1,12 @@
 import eventlet
-eventlet.monkey_patch()
+eventlet.monkey_patch()  # Must be at top
 
 from flask import Flask, request, jsonify, render_template_string
-from flask_socketio import SocketIO, emit
+from flask_socketio import SocketIO
 from werkzeug.middleware.proxy_fix import ProxyFix
+from PIL import Image
+from io import BytesIO
+from base64 import b64encode
 
 # === Flask app setup ===
 app = Flask(__name__)
@@ -20,12 +23,21 @@ latest_label = None
 @app.route("/api/frame", methods=["POST"])
 def receive_frame():
     global latest_frame, latest_label
-    data = request.get_json()
-    latest_label = data.get("label")
-    latest_frame = data.get("frame")
-    # Emit to all connected clients
-    socketio.emit("new_frame", {"label": latest_label, "frame": latest_frame})
-    return jsonify({"status": "ok"}), 200
+    label = request.form.get("label")
+    confidence = request.form.get("confidence")
+    file = request.files.get("image")
+
+    if file:
+        img = Image.open(file.stream)
+        buf = BytesIO()
+        img.save(buf, format="JPEG")
+        latest_frame = b64encode(buf.getvalue()).decode("utf-8")
+        latest_label = f"{label} ({float(confidence):.2f})"
+        # Emit to all connected clients
+        socketio.emit("new_frame", {"label": latest_label, "frame": latest_frame})
+        return jsonify({"status": "ok"}), 200
+
+    return jsonify({"status": "no image"}), 400
 
 # === Frontend page ===
 @app.route("/")
@@ -53,6 +65,4 @@ def index():
 
 # === Run server with Eventlet ===
 if __name__ == "__main__":
-    import eventlet
     socketio.run(app, host="0.0.0.0", port=8000, debug=True)
-
