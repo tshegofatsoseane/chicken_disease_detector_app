@@ -1,3 +1,6 @@
+import eventlet
+eventlet.monkey_patch()
+
 import os
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 from flask_socketio import SocketIO
@@ -9,7 +12,6 @@ from functools import wraps
 from dotenv import load_dotenv
 import eventlet
 
-eventlet.monkey_patch()
 load_dotenv()  # Load .env variables
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
