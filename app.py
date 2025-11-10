@@ -1,58 +1,32 @@
 # ==============================
-# app.py
+# app.py (Fixed for Docker + Render)
 # ==============================
-import eventlet
-eventlet.monkey_patch()  # Must be the first import for Eventlet
-
 import os
 import base64
 from functools import wraps
 from dotenv import load_dotenv
-import certifi  # For proper SSL/TLS validation
-
-from flask import Flask, request, jsonify, render_template, session, redirect, url_for
-from flask_socketio import SocketIO
-from werkzeug.middleware.proxy_fix import ProxyFix
-from werkzeug.security import generate_password_hash, check_password_hash
-from pymongo import MongoClient
+import certifi
+from pymongo import MongoClient, errors
 
 # ==============================
 # Load environment variables
 # ==============================
 load_dotenv()
-
 SECRET_KEY = os.environ.get("SECRET_KEY", "supersecretkey")
 MONGO_URI = os.environ.get("MONGO_URI")
 
 # ==============================
-# Flask setup
+# MongoDB setup (connect first!)
 # ==============================
-app = Flask(__name__, static_folder="static", template_folder="templates")
-app.wsgi_app = ProxyFix(app.wsgi_app)
-app.secret_key = SECRET_KEY
-
-# ==============================
-# SocketIO setup
-# ==============================
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
-
-# ==============================
-# MongoDB setup (Render-friendly)
-# ==============================
-from pymongo import MongoClient, errors
-
 try:
-    mongo_uri = os.getenv("MONGO_URI")
-
-    # Ensure CA bundle and TLS verification
     client = MongoClient(
-        mongo_uri,
+        MONGO_URI,
         tls=True,
         tlsCAFile=certifi.where(),
         serverSelectionTimeoutMS=10000  # 10s timeout
     )
 
-    # Force a connection to test immediately
+    # Test connection immediately
     client.admin.command("ping")
     print("✅ Successfully connected to MongoDB")
 
@@ -73,6 +47,25 @@ except Exception as e:
     print(e)
     raise
 
+# ==============================
+# Eventlet patching
+# ==============================
+import eventlet
+eventlet.monkey_patch()  # Must come after MongoDB connection
+
+# ==============================
+# Flask + SocketIO setup
+# ==============================
+from flask import Flask, request, jsonify, render_template, session, redirect, url_for
+from flask_socketio import SocketIO
+from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.security import generate_password_hash, check_password_hash
+
+app = Flask(__name__, static_folder="static", template_folder="templates")
+app.wsgi_app = ProxyFix(app.wsgi_app)
+app.secret_key = SECRET_KEY
+
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 # ==============================
 # Shared state

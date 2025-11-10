@@ -1,12 +1,12 @@
 # ==============================
-# Dockerfile for Chicken Disease Detector App
+# Dockerfile
 # ==============================
 
 FROM python:3.11-slim
 
-# ---- FIX SSL/TLS ----
+# Install system dependencies for TLS & DNS resolution
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl gnupg && \
+    ca-certificates curl gnupg dnsutils && \
     update-ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
@@ -24,5 +24,4 @@ EXPOSE 8000
 ENV FLASK_ENV=production
 ENV PYTHONUNBUFFERED=1
 
-# ---- Run app ----
 CMD ["python", "-u", "app.py"]
