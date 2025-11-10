@@ -2,26 +2,106 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Kgosi BioDrone</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://js.paystack.co/v1/inline.js"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <style>
+    .loader {
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top: 4px solid white;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .btn-primary {
+      background-color: #7c3aed;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      border: none;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background-color 0.2s;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background-color: #6d28d9;
+    }
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn-secondary {
+      background-color: #e5e7eb;
+      color: #1f2937;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      border: none;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background-color 0.2s;
+    }
+    .btn-secondary:hover {
+      background-color: #d1d5db;
+    }
+    .btn-danger {
+      background-color: #ef4444;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      border: none;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background-color 0.2s;
+    }
+    .btn-danger:hover:not(:disabled) {
+      background-color: #dc2626;
+    }
+    .btn-danger:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn-warning {
+      background-color: #f59e0b;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      border: none;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background-color 0.2s;
+    }
+    .btn-warning:hover:not(:disabled) {
+      background-color: #d97706;
+    }
+    .btn-warning:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
 
   <!-- Header -->
   <header class="bg-white shadow-sm border-b px-6 py-3 flex justify-between items-center">
     <div class="flex items-center space-x-3">
-      <img src="{{ url_for('static', filename='applogo.png') }}" alt="Kgosi BioDrone Logo" class="h-10 w-10 rounded-lg shadow-sm">
+      <img src="{{ url_for('static', filename='applogo.png') }}" alt="Kgosi BioDrone Logo" class="h-10 w-10 rounded-lg shadow-sm" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%237c3aed%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-size=%2240%22 fill=%22white%22 text-anchor=%22middle%22 dy=%22.3em%22%3E🤖%3C/text%3E%3C/svg%3E'">
       <div>
         <h1 class="text-xl font-semibold text-purple-700">Kgosi BioDrone</h1>
         <p class="text-sm text-gray-500">AI-Powered Poultry Health Monitoring System</p>
       </div>
     </div>
     <div class="space-x-3">
-      <button class="btn-secondary">⚙️ Settings</button>
-      <button class="btn-secondary">📶 Connection</button>
+      <button class="btn-secondary" onclick="alert('Settings coming soon!')">⚙️ Settings</button>
+      <button class="btn-secondary" onclick="checkConnection()">📶 Connection</button>
       <a href="{{ url_for('logout') }}" class="btn-secondary">🚪 Logout</a>
     </div>
   </header>
@@ -44,7 +124,7 @@
         <p class="text-gray-500 mt-3" id="label"></p>
       </div>
 
-      <div class="mt-5 flex space-x-3">
+      <div class="mt-5 flex flex-wrap gap-3">
         <button id="start" class="btn-primary" onclick="triggerPi()">Start Camera</button>
         <button id="stop" class="btn-danger" onclick="stopPi()" disabled>Stop</button>
         <button id="capture" class="btn-secondary" onclick="captureFrame()" disabled>Capture</button>
@@ -58,12 +138,12 @@
       <div>
         <h3 class="font-semibold mb-2 text-purple-700">1️⃣ Capture / Upload</h3>
         <button class="btn-primary w-full mb-2" onclick="triggerPi()">Start Live Feed</button>
-        <button class="btn-secondary w-full mb-2" onclick="captureFrame()">Capture Frame</button>
+        <button class="btn-secondary w-full mb-2" onclick="captureFrame()" id="capture-sidebar" disabled>Capture Frame</button>
       </div>
 
       <div>
         <h3 class="font-semibold mb-2 text-purple-700">2️⃣ AI Analysis</h3>
-        <button class="btn-primary w-full mb-2" onclick="analyzeFrame()">Analyze Frame</button>
+        <button class="btn-primary w-full mb-2" onclick="analyzeFrame()" id="analyze-sidebar" disabled>Analyze Frame</button>
       </div>
 
       <div>
@@ -75,8 +155,8 @@
 
       <div>
         <h3 class="font-semibold mb-2 text-purple-700">4️⃣ Quick Actions</h3>
-        <button class="btn-danger w-full mb-2">🚨 Alert</button>
-        <button class="btn-warning w-full mb-2">📅 Schedule</button>
+        <button class="btn-danger w-full mb-2" onclick="alert('Alert system will send notifications to registered contacts.')">🚨 Alert</button>
+        <button class="btn-warning w-full mb-2" onclick="alert('Schedule monitoring coming soon!')">📅 Schedule</button>
       </div>
     </aside>
   </main>
@@ -87,117 +167,161 @@
     <p class="text-white font-medium">Analyzing frame with BioDrone AI...</p>
   </div>
 
+  <!-- Payment Modal -->
+  <div id="payment-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 mx-4">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-2xl font-semibold text-purple-700">💳 Payment Required</h2>
+        <button class="text-gray-400 hover:text-gray-700 text-2xl" onclick="closePaymentModal()">×</button>
+      </div>
+      <p class="text-gray-600 mb-6">Complete payment to download your analysis report PDF.</p>
+      
+      <div class="bg-gray-50 p-4 rounded-lg mb-6">
+        <div class="flex justify-between mb-2">
+          <span class="text-gray-600">Report Type:</span>
+          <span id="payment-disease" class="font-semibold text-purple-700">-</span>
+        </div>
+        <div class="flex justify-between mb-2">
+          <span class="text-gray-600">Amount:</span>
+          <span id="payment-amount" class="font-semibold text-purple-700">R50.00</span>
+        </div>
+        <div class="border-t pt-2 flex justify-between">
+          <span class="font-semibold text-gray-800">Total:</span>
+          <span id="payment-total" class="font-semibold text-lg text-purple-700">R50.00</span>
+        </div>
+      </div>
+
+      <button id="pay-btn" class="btn-primary w-full mb-3" onclick="processPayment()">
+        🔒 Pay with Paystack
+      </button>
+      <button class="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50" onclick="closePaymentModal()">
+        Cancel
+      </button>
+      <p class="text-xs text-gray-500 mt-4 text-center">Secure payment powered by Paystack (ZAR)</p>
+    </div>
+  </div>
+
   <!-- Analysis Modal -->
   <div id="analysis-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
-    <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-full p-6 relative">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-full p-6 relative mx-4 max-h-[90vh] overflow-y-auto">
       <button class="absolute top-3 right-3 text-gray-400 hover:text-gray-700 font-bold text-xl" onclick="closeModal()">×</button>
       <div class="flex items-center space-x-3 mb-5 border-b pb-2">
         <span id="severity-badge" class="px-3 py-1 rounded-full text-white text-sm font-medium"></span>
         <h2 class="text-2xl font-semibold text-purple-700">AI Analysis Report</h2>
       </div>
 
-      <div class="flex space-x-6">
-        <div class="w-1/2 flex justify-center items-center bg-gray-100 rounded-xl p-3">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div class="flex justify-center items-center bg-gray-100 rounded-xl p-3">
           <img id="modal-image" class="rounded-xl border border-gray-300 shadow-sm max-h-[280px] object-contain" alt="Captured Frame">
         </div>
-        <div id="modal-content" class="flex-1 space-y-4 text-gray-700 overflow-y-auto pr-2"></div>
+        <div id="modal-content" class="space-y-4 text-gray-700 overflow-y-auto pr-2"></div>
       </div>
 
-      <div class="mt-6 flex justify-end space-x-3 border-t pt-4">
+      <div class="mt-6 flex flex-wrap justify-end gap-3 border-t pt-4">
         <button class="btn-secondary" onclick="saveToHistory()">💾 Save to History</button>
-        <button class="btn-primary" onclick="downloadPDF()">📄 Download Report</button>
+        <button class="btn-primary" onclick="initiateDownload()">📄 Download Report</button>
       </div>
     </div>
   </div>
 
 <script>
   const socket = io({ transports: ["websocket"] });
+  
+  // Payment configuration (initialized from backend)
+  let PAYSTACK_PUBLIC_KEY = "{{ paystack_public_key }}";
+  let DOWNLOAD_COST_ZAR = 50;
+  let PAYSTACK_CURRENCY = "ZAR";
 
   // === STATE VARIABLES ===
-  let isLive = false;             // Is live feed active
-  let hasCapture = false;          // Has a frame been captured
-  let liveFrame = null;            // Only for live feed
-  let capturedFrame = null;        // Captured frame for analysis
-  let latestReport = null;         // Stores full report for modal/history
+  let isLive = false;
+  let hasCapture = false;
+  let liveFrame = null;
+  let capturedFrame = null;
+  let latestReport = null;
   let history = [];
+  let paymentInProgress = false;
 
   const historyList = document.getElementById("history-list");
   const video = document.getElementById("video");
   const placeholder = document.getElementById("placeholder");
   const label = document.getElementById("label");
 
-const DISEASES = {
-  0: { 
-    name: 'Avian Influenza', 
-    severity: 'critical', 
-    description: 'Highly contagious viral infection detected.', 
-    nextSteps: ['IMMEDIATE QUARANTINE', 'Contact veterinarian urgently', 'Notify authorities', 'Test all birds'], 
-    care: { immediate:'Isolate infected birds immediately.', daily:'Monitor all birds for symptoms.', weekly:'Continue health surveillance.', prevention:'Vaccinate and maintain strict biosecurity.'} 
-  },
-  1: { 
-    name: 'Splay Foot', 
-    severity: 'warning', 
-    description: 'A condition where chicks walk with legs spread outward.', 
-    nextSteps: ['Support chicks with proper bedding', 'Use leg braces if needed'], 
-    care: { immediate:'Provide soft bedding.', daily:'Check for proper leg alignment.', weekly:'Ensure proper nutrition and supplements.', prevention:'Ensure proper brooder conditions for chicks.'} 
-  },
-  2: { 
-    name: 'New Castle Disease', 
-    severity: 'critical', 
-    description: 'Highly contagious viral disease causing respiratory and neurological symptoms.', 
-    nextSteps: ['Isolate infected birds', 'Contact vet immediately', 'Vaccinate healthy birds'], 
-    care: { immediate:'Separate infected birds.', daily:'Supportive care.', weekly:'Monitor flock health.', prevention:'Maintain vaccination program.'} 
-  },
-  3: { 
-    name: 'Infectious Coryza', 
-    severity: 'warning', 
-    description: 'Bacterial infection affecting upper respiratory tract.', 
-    nextSteps: ['Isolate sick birds', 'Administer prescribed antibiotics'], 
-    care: { immediate:'Provide clean water and feed.', daily:'Monitor for sneezing or swelling.', weekly:'Sanitize housing.', prevention:'Vaccinate and maintain hygiene.'} 
-  },
-  4: { 
-    name: 'Healthy Chicken', 
-    severity: 'healthy', 
-    description: 'No disease detected. Chicken is in good health.', 
-    nextSteps: ['Continue routine care'], 
-    care: { immediate:'Maintain normal care.', daily:'Monitor flock.', weekly:'Check feed and water quality.', prevention:'Routine vaccination and hygiene.'} 
-  },
-  5: { 
-    name: 'Gumboro Disease', 
-    severity: 'warning', 
-    description: 'Affects immune system, common in young chickens.', 
-    nextSteps: ['Isolate affected birds', 'Contact vet'], 
-    care: { immediate:'Provide clean environment.', daily:'Hydration and nutrition.', weekly:'Vaccination schedule check.', prevention:'Stress reduction and hygiene.'} 
-  },
-  6: { 
-    name: 'Healthy', 
-    severity: 'healthy', 
-    description: 'No visible signs of illness.', 
-    nextSteps: ['Maintain regular care'], 
-    care: { immediate:'Feed and water as usual.', daily:'Monitor flock.', weekly:'Routine health checks.', prevention:'Maintain biosecurity measures.'} 
-  },
-  7: { 
-    name: 'Dead Chickens', 
-    severity: 'critical', 
-    description: 'Mortality detected in flock.', 
-    nextSteps: ['Identify cause of death', 'Remove carcasses immediately', 'Sanitize area', 'Contact veterinarian'], 
-    care: { immediate:'Remove dead birds.', daily:'Monitor flock closely.', weekly:'Investigate underlying causes.', prevention:'Vaccination and biosecurity.'} 
-  },
-  8: { 
-    name: 'Chicken Feeding', 
-    severity: 'info', 
-    description: 'Monitoring feeding activity and feed intake.', 
-    nextSteps: ['Ensure feed quality', 'Maintain feeding schedule'], 
-    care: { immediate:'Check feed supply.', daily:'Observe eating behavior.', weekly:'Adjust feed if necessary.', prevention:'Store feed properly to avoid contamination.'} 
-  }
-};
-
+  const DISEASES = {
+    0: { 
+      name: 'Avian Influenza', 
+      severity: 'critical', 
+      description: 'Highly contagious viral infection detected.', 
+      nextSteps: ['IMMEDIATE QUARANTINE', 'Contact veterinarian urgently', 'Notify authorities', 'Test all birds'], 
+      care: { immediate:'Isolate infected birds immediately.', daily:'Monitor all birds for symptoms.', weekly:'Continue health surveillance.', prevention:'Vaccinate and maintain strict biosecurity.'} 
+    },
+    1: { 
+      name: 'Splay Foot', 
+      severity: 'warning', 
+      description: 'A condition where chicks walk with legs spread outward.', 
+      nextSteps: ['Support chicks with proper bedding', 'Use leg braces if needed'], 
+      care: { immediate:'Provide soft bedding.', daily:'Check for proper leg alignment.', weekly:'Ensure proper nutrition and supplements.', prevention:'Ensure proper brooder conditions for chicks.'} 
+    },
+    2: { 
+      name: 'New Castle Disease', 
+      severity: 'critical', 
+      description: 'Highly contagious viral disease causing respiratory and neurological symptoms.', 
+      nextSteps: ['Isolate infected birds', 'Contact vet immediately', 'Vaccinate healthy birds'], 
+      care: { immediate:'Separate infected birds.', daily:'Supportive care.', weekly:'Monitor flock health.', prevention:'Maintain vaccination program.'} 
+    },
+    3: { 
+      name: 'Infectious Coryza', 
+      severity: 'warning', 
+      description: 'Bacterial infection affecting upper respiratory tract.', 
+      nextSteps: ['Isolate sick birds', 'Administer prescribed antibiotics'], 
+      care: { immediate:'Provide clean water and feed.', daily:'Monitor for sneezing or swelling.', weekly:'Sanitize housing.', prevention:'Vaccinate and maintain hygiene.'} 
+    },
+    4: { 
+      name: 'Healthy Chicken', 
+      severity: 'healthy', 
+      description: 'No disease detected. Chicken is in good health.', 
+      nextSteps: ['Continue routine care'], 
+      care: { immediate:'Maintain normal care.', daily:'Monitor flock.', weekly:'Check feed and water quality.', prevention:'Routine vaccination and hygiene.'} 
+    },
+    5: { 
+      name: 'Gumboro Disease', 
+      severity: 'warning', 
+      description: 'Affects immune system, common in young chickens.', 
+      nextSteps: ['Isolate affected birds', 'Contact vet'], 
+      care: { immediate:'Provide clean environment.', daily:'Hydration and nutrition.', weekly:'Vaccination schedule check.', prevention:'Stress reduction and hygiene.'} 
+    },
+    6: { 
+      name: 'Healthy', 
+      severity: 'healthy', 
+      description: 'No visible signs of illness.', 
+      nextSteps: ['Maintain regular care'], 
+      care: { immediate:'Feed and water as usual.', daily:'Monitor flock.', weekly:'Routine health checks.', prevention:'Maintain biosecurity measures.'} 
+    },
+    7: { 
+      name: 'Dead Chickens', 
+      severity: 'critical', 
+      description: 'Mortality detected in flock.', 
+      nextSteps: ['Identify cause of death', 'Remove carcasses immediately', 'Sanitize area', 'Contact veterinarian'], 
+      care: { immediate:'Remove dead birds.', daily:'Monitor flock closely.', weekly:'Investigate underlying causes.', prevention:'Vaccination and biosecurity.'} 
+    },
+    8: { 
+      name: 'Chicken Feeding', 
+      severity: 'info', 
+      description: 'Monitoring feeding activity and feed intake.', 
+      nextSteps: ['Ensure feed quality', 'Maintain feeding schedule'], 
+      care: { immediate:'Check feed supply.', daily:'Observe eating behavior.', weekly:'Adjust feed if necessary.', prevention:'Store feed properly to avoid contamination.'} 
+    }
+  };
 
   // === LOAD HISTORY ===
   async function loadHistory() {
-    const res = await fetch("/get-history");
-    history = await res.json();
-    renderHistory();
+    try {
+      const res = await fetch("/get-history");
+      history = await res.json();
+      renderHistory();
+    } catch (e) {
+      console.error("Error loading history:", e);
+      historyList.innerHTML = '<li class="text-gray-400 italic">Error loading history</li>';
+    }
   }
 
   // === SOCKET EVENTS ===
@@ -232,6 +356,7 @@ const DISEASES = {
     placeholder.classList.add("hidden");
     label.innerText = "📸 Frame captured!";
     document.getElementById("analyze").disabled = false;
+    document.getElementById("analyze-sidebar").disabled = false;
     document.getElementById("stop").disabled = true;
     document.getElementById("start").disabled = false;
     document.getElementById("reset").disabled = false;
@@ -239,9 +364,17 @@ const DISEASES = {
 
   socket.on("frame_analyzed", d => {
     closeLoading();
-    const disease = DISEASES[d.disease_id];
+    const disease = DISEASES[d.disease_id] || DISEASES[4];
     latestReport = { disease, confidence: d.confidence, image: capturedFrame };
     showReport(disease, d.confidence);
+  });
+
+  socket.on("connect", () => {
+    console.log("Connected to server");
+  });
+
+  socket.on("disconnect", () => {
+    console.log("Disconnected from server");
   });
 
   // === UI FUNCTIONS ===
@@ -281,16 +414,24 @@ const DISEASES = {
       placeholder.classList.add("hidden");
       label.innerText = "📸 Frame captured!";
       document.getElementById("analyze").disabled = false;
+      document.getElementById("analyze-sidebar").disabled = false;
       document.getElementById("stop").disabled = true;
       document.getElementById("start").disabled = false;
       document.getElementById("reset").disabled = false;
+    }).catch(e => {
+      console.error("Capture error:", e);
+      alert("Error capturing frame");
     });
   }
 
   function analyzeFrame() {
     if(!hasCapture) return alert("Capture a frame first!");
     showLoading();
-    fetch("/analyze-frame", { method:"POST" });
+    fetch("/analyze-frame", { method:"POST" }).catch(e => {
+      console.error("Analysis error:", e);
+      closeLoading();
+      alert("Error analyzing frame");
+    });
   }
 
   function resetLiveDetection() {
@@ -308,7 +449,9 @@ const DISEASES = {
     document.getElementById("start").disabled = false;
     document.getElementById("stop").disabled = true;
     document.getElementById("capture").disabled = true;
+    document.getElementById("capture-sidebar").disabled = true;
     document.getElementById("analyze").disabled = true;
+    document.getElementById("analyze-sidebar").disabled = true;
     document.getElementById("reset").disabled = true;
   }
 
@@ -316,12 +459,15 @@ const DISEASES = {
     document.getElementById("start").disabled = !enable;
     document.getElementById("stop").disabled = enable;
     document.getElementById("capture").disabled = enable;
+    document.getElementById("capture-sidebar").disabled = enable;
   }
 
   function openModal(){ document.getElementById("analysis-modal").classList.remove("hidden"); }
   function closeModal(){ document.getElementById("analysis-modal").classList.add("hidden"); }
   function showLoading(){ document.getElementById("loading-overlay").classList.remove("hidden"); }
   function closeLoading(){ document.getElementById("loading-overlay").classList.add("hidden"); }
+  function openPaymentModal(){ document.getElementById("payment-modal").classList.remove("hidden"); }
+  function closePaymentModal(){ document.getElementById("payment-modal").classList.add("hidden"); }
 
   function showReport(disease, confidence) {
     const modalContent = document.getElementById("modal-content");
@@ -331,96 +477,294 @@ const DISEASES = {
 
     modalContent.innerHTML = `
       <div>
-        <h3 class="text-xl font-semibold">${disease.name}</h3>
-        <p class="text-gray-500">${disease.description}</p>
-        <h4 class="mt-3 font-semibold text-purple-700">Next Steps</h4>
-        <ul class="list-disc list-inside text-gray-700">
-          ${disease.nextSteps.map(s=>`<li>${s}</li>`).join('')}
-        </ul>
-        <h4 class="mt-3 font-semibold text-purple-700">Care Plan</h4>
-        <ul class="list-disc list-inside text-gray-700">
-          <li><strong>Immediate:</strong> ${disease.care.immediate}</li>
-          <li><strong>Daily:</strong> ${disease.care.daily}</li>
-          <li><strong>Weekly:</strong> ${disease.care.weekly}</li>
-          <li><strong>Prevention:</strong> ${disease.care.prevention}</li>
-        </ul>
-        <p class="mt-3 text-sm font-semibold text-gray-600">Confidence: ${(confidence*100).toFixed(1)}%</p>
+        <h3 class="text-xl font-semibold text-purple-700">${disease.name}</h3>
+        <p class="text-gray-600 mt-2">${disease.description}</p>
+        <div class="mt-4">
+          <h4 class="font-semibold text-purple-700 mb-2">Next Steps</h4>
+          <ul class="list-disc list-inside text-gray-700 space-y-1">
+            ${disease.nextSteps.map(s=>`<li>${s}</li>`).join('')}
+          </ul>
+        </div>
+        <div class="mt-4">
+          <h4 class="font-semibold text-purple-700 mb-2">Care Plan</h4>
+          <ul class="list-disc list-inside text-gray-700 space-y-1">
+            <li><strong>Immediate:</strong> ${disease.care.immediate}</li>
+            <li><strong>Daily:</strong> ${disease.care.daily}</li>
+            <li><strong>Weekly:</strong> ${disease.care.weekly}</li>
+            <li><strong>Prevention:</strong> ${disease.care.prevention}</li>
+          </ul>
+        </div>
+        <p class="mt-4 text-sm font-semibold text-gray-600">Confidence: ${(confidence*100).toFixed(1)}%</p>
       </div>`;
 
     const badge = document.getElementById("severity-badge");
     badge.textContent = disease.severity.toUpperCase();
-    badge.className = disease.severity==='critical'
-      ? "px-3 py-1 rounded-full bg-red-600 text-white text-sm font-medium"
-      : "px-3 py-1 rounded-full bg-yellow-500 text-white text-sm font-medium";
+    if (disease.severity === 'critical') {
+      badge.className = "px-3 py-1 rounded-full bg-red-600 text-white text-sm font-medium";
+    } else if (disease.severity === 'warning') {
+      badge.className = "px-3 py-1 rounded-full bg-yellow-500 text-white text-sm font-medium";
+    } else if (disease.severity === 'healthy') {
+      badge.className = "px-3 py-1 rounded-full bg-green-500 text-white text-sm font-medium";
+    } else {
+      badge.className = "px-3 py-1 rounded-full bg-blue-500 text-white text-sm font-medium";
+    }
 
     openModal();
   }
 
-  async function saveToHistory(){
+  async function initiateDownload() {
+    if (!latestReport) return alert("No report to download!");
+    
+    const disease = latestReport.disease;
+    document.getElementById("payment-disease").textContent = disease.name;
+    document.getElementById("payment-amount").textContent = `R${DOWNLOAD_COST_ZAR}.00`;
+    document.getElementById("payment-total").textContent = `R${DOWNLOAD_COST_ZAR}.00`;
+    
+    closeModal();  // Close analysis modal
+    openPaymentModal();  // Open payment modal
+  }
+
+  async function processPayment() {
+    if (paymentInProgress) return;
+    paymentInProgress = true;
+    
+    const payBtn = document.getElementById("pay-btn");
+    payBtn.disabled = true;
+    payBtn.textContent = "Processing...";
+
+    try {
+      const disease = latestReport.disease;
+      console.log("Initializing payment for:", disease.name);
+      
+      const initRes = await fetch("/api/initialize-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: DOWNLOAD_COST_ZAR,
+          disease_name: disease.name
+        })
+      });
+
+      const initData = await initRes.json();
+      console.log("Payment init response:", initData);
+      
+      if (!initData.reference) {
+        alert("❌ Failed to initialize payment: " + (initData.message || "Unknown error"));
+        paymentInProgress = false;
+        payBtn.disabled = false;
+        payBtn.textContent = "🔒 Pay with Paystack";
+        return;
+      }
+
+      const handler = PaystackPop.setup({
+        key: PAYSTACK_PUBLIC_KEY,
+        email: `test+${Date.now()}@biodrone.test`,  // Use unique email per transaction
+        amount: DOWNLOAD_COST_ZAR * 100,
+        ref: initData.reference,
+        currency: "ZAR",
+        onClose: function() {
+          console.log('Payment modal closed');
+          paymentInProgress = false;
+          payBtn.disabled = false;
+          payBtn.textContent = "🔒 Pay with Paystack";
+        },
+        onSuccess: function(response) {
+          console.log('Payment successful:', response);
+          verifyPayment(response.reference);
+        }
+      });
+      handler.openIframe();
+    } catch (e) {
+      console.error("Payment error:", e);
+      alert("❌ Payment error: " + e.message);
+      paymentInProgress = false;
+      payBtn.disabled = false;
+      payBtn.textContent = "🔒 Pay with Paystack";
+    }
+  }
+
+  async function verifyPayment(reference) {
+    try {
+      const verifyRes = await fetch("/api/verify-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reference })
+      });
+
+      const verifyData = await verifyRes.json();
+      if (verifyData.status === "ok" && verifyData.can_download) {
+        alert("✅ Payment successful! Downloading your report...");
+        closePaymentModal();
+        downloadPDF();
+      } else {
+        alert("❌ Payment verification failed");
+      }
+    } catch (e) {
+      console.error("Verification error:", e);
+      alert("Verification error: " + e.message);
+    } finally {
+      paymentInProgress = false;
+      document.getElementById("pay-btn").disabled = false;
+      document.getElementById("pay-btn").textContent = "🔒 Pay with Paystack";
+    }
+  }
+
+  async function saveToHistory() {
     if(!latestReport) return;
     const { disease, confidence, image } = latestReport;
     const record = { disease, confidence, image, timestamp:new Date().toISOString() };
-    await fetch("/save-result",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(record) });
-    loadHistory();
-    closeModal();
+    try {
+      await fetch("/save-result",{ method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(record) });
+      loadHistory();
+      alert("✅ Report saved to history!");
+      closeModal();
+    } catch (e) {
+      console.error("Error saving:", e);
+      alert("Error saving to history");
+    }
   }
 
-  function renderHistory(){
-    if(history.length===0){
-      historyList.innerHTML='<li class="text-gray-400 italic">No detections yet.</li>';
+  function renderHistory() {
+    if(history.length === 0) {
+      historyList.innerHTML = '<li class="text-gray-400 italic">No detections yet.</li>';
       return;
     }
-    historyList.innerHTML = history.map((h,i)=>`
-      <li class="flex items-center space-x-3 p-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer" onclick='viewHistory(${i})'>
-        <img src="${h.image}" class="w-12 h-12 rounded-lg object-cover border" alt="">
-        <div class="flex-1">
-          <p class="font-medium text-gray-800">${h.disease.name}</p>
+    historyList.innerHTML = history.map((h, i) => {
+      const disease = h.disease || DISEASES[4];
+      return `
+      <li class="flex items-center space-x-3 p-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer transition" onclick='viewHistory(${i})'>
+        <img src="${h.image}" class="w-12 h-12 rounded-lg object-cover border" alt="" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%23e5e7eb%22 width=%22100%22 height=%22100%22/%3E%3C/svg%3E'">
+        <div class="flex-1 min-w-0">
+          <p class="font-medium text-gray-800 truncate">${disease.name}</p>
           <p class="text-xs text-gray-500">${new Date(h.timestamp).toLocaleString()}</p>
         </div>
-        <span class="${h.disease.severity==='critical'?'text-red-500':'text-yellow-500'} font-semibold text-sm">${(h.confidence*100).toFixed(0)}%</span>
-      </li>`).join('');
+        <span class="${disease.severity === 'critical' ? 'text-red-500' : disease.severity === 'warning' ? 'text-yellow-500' : 'text-green-500'} font-semibold text-sm whitespace-nowrap">${(h.confidence*100).toFixed(0)}%</span>
+      </li>`;
+    }).join('');
   }
 
-  function viewHistory(index){
+  function viewHistory(index) {
     const record = history[index];
     if(!record) return;
     latestReport = record;
-    capturedFrame = record.image;  // update capturedFrame for modal
-    showReport(record.disease, record.confidence);
+    capturedFrame = record.image;
+    const disease = record.disease || DISEASES[4];
+    showReport(disease, record.confidence);
   }
 
-  async function downloadPDF(){
+  async function downloadPDF() {
     if(!latestReport) return;
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF();
     const { disease, confidence, image } = latestReport;
 
-    const logo = new Image();
-    logo.src = "{{ url_for('static', filename='applogo.png') }}";
-    await new Promise(r=>{logo.onload=r;});
-    pdf.addImage(logo,'PNG',160,10,40,20);
+    try {
+      // Add header
+      pdf.setFontSize(24);
+      pdf.setTextColor(124, 58, 237); // Purple
+      pdf.text("Kgosi BioDrone", 20, 20);
+      pdf.setFontSize(10);
+      pdf.setTextColor(107, 114, 128); // Gray
+      pdf.text("AI-Powered Poultry Health Monitoring System", 20, 28);
 
-    pdf.setFontSize(18); pdf.text("Kgosi BioDrone AI Analysis Report",20,25);
-    if(image) pdf.addImage(image,'JPEG',20,35,70,50);
-    pdf.setFontSize(12); let y=90;
-    pdf.text(`Disease Detected: ${disease.name}`,20,y);
-    pdf.text(`Severity Level: ${disease.severity.toUpperCase()}`,20,y+10);
-    pdf.text(`Confidence: ${(confidence*100).toFixed(1)}%`,20,y+20);
-    pdf.text("Description:",20,y+35);
-    pdf.text(disease.description,25,y+43,{maxWidth:170});
-    pdf.text("Next Steps:",20,y+60);
-    disease.nextSteps.forEach((s,i)=>pdf.text(`• ${s}`,25,y+70+i*8));
-    pdf.text("Care Instructions:",20,y+110);
-    let yPos=y+120;
-    for(const[k,v] of Object.entries(disease.care)){
-      pdf.text(`${k[0].toUpperCase()+k.slice(1)}: ${v}`,25,yPos,{maxWidth:170});
-      yPos+=8;
+      // Add image if available
+      if(image) {
+        try {
+          pdf.addImage(image, 'JPEG', 20, 40, 80, 60);
+        } catch (e) {
+          console.log("Could not add image to PDF");
+        }
+      }
+
+      // Add analysis details
+      let yPos = image ? 110 : 50;
+      
+      pdf.setFontSize(14);
+      pdf.setTextColor(0, 0, 0);
+      pdf.text("Analysis Report", 20, yPos);
+      yPos += 10;
+
+      pdf.setFontSize(11);
+      pdf.setTextColor(31, 41, 55); // Dark gray
+      pdf.text(`Disease Detected: ${disease.name}`, 20, yPos);
+      yPos += 8;
+      pdf.text(`Severity Level: ${disease.severity.toUpperCase()}`, 20, yPos);
+      yPos += 8;
+      pdf.text(`Confidence: ${(confidence*100).toFixed(1)}%`, 20, yPos);
+      yPos += 8;
+      pdf.text(`Date: ${new Date().toLocaleString()}`, 20, yPos);
+      yPos += 15;
+
+      // Add description
+      pdf.setFontSize(10);
+      pdf.setTextColor(107, 114, 128);
+      pdf.text("Description:", 20, yPos);
+      yPos += 5;
+      const descLines = pdf.splitTextToSize(disease.description, 170);
+      pdf.text(descLines, 20, yPos);
+      yPos += descLines.length * 5 + 5;
+
+      // Add next steps
+      pdf.text("Recommended Next Steps:", 20, yPos);
+      yPos += 5;
+      disease.nextSteps.forEach(step => {
+        const lines = pdf.splitTextToSize(`• ${step}`, 170);
+        pdf.text(lines, 20, yPos);
+        yPos += lines.length * 4 + 2;
+      });
+
+      yPos += 5;
+
+      // Add care instructions
+      pdf.text("Care Instructions:", 20, yPos);
+      yPos += 5;
+      for (const [key, value] of Object.entries(disease.care)) {
+        const label = key.charAt(0).toUpperCase() + key.slice(1);
+        const lines = pdf.splitTextToSize(`${label}: ${value}`, 170);
+        pdf.text(lines, 20, yPos);
+        yPos += lines.length * 4 + 2;
+      }
+
+      // Add footer
+      pdf.setFontSize(8);
+      pdf.setTextColor(156, 163, 175); // Light gray
+      pdf.text("This report was generated by Kgosi BioDrone AI Analysis System", 20, pdf.internal.pageSize.height - 10);
+
+      pdf.save(`${disease.name.replace(/\s+/g,"_")}_Report_${new Date().getTime()}.pdf`);
+    } catch (e) {
+      console.error("PDF generation error:", e);
+      alert("Error generating PDF: " + e.message);
     }
-    pdf.save(`${disease.name.replace(/\s+/g,"_")}_Report.pdf`);
   }
 
-  // === INIT ===
-  loadHistory();
+  function checkConnection() {
+    fetch("/health")
+      .then(r => r.json())
+      .then(d => {
+        alert(`✅ Server: ${d.status}\n📡 Pi Feed: ${d.pi_feed ? 'Active' : 'Inactive'}\n📸 Frame Available: ${d.has_frame ? 'Yes' : 'No'}`);
+      })
+      .catch(e => alert("❌ Connection failed: " + e.message));
+  }
+
+  // === INITIALIZATION ===
+  async function initializePaymentConfig() {
+    try {
+      const res = await fetch("/api/payment-config");
+      const config = await res.json();
+      DOWNLOAD_COST_ZAR = config.download_cost_zar;
+      PAYSTACK_CURRENCY = config.currency;
+      PAYSTACK_PUBLIC_KEY = config.paystack_public_key;
+      console.log(`✅ Payment config loaded: R${DOWNLOAD_COST_ZAR}.00 ${PAYSTACK_CURRENCY}`);
+    } catch (e) {
+      console.error("Error loading payment config:", e);
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    await initializePaymentConfig();
+    loadHistory();
+    console.log("🚀 BioDrone interface loaded");
+  });
 </script>
 </body>
 </html>

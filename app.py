@@ -1,6 +1,3 @@
-# ==============================
-# app.py
-# ==============================
 import eventlet
 eventlet.monkey_patch()  # Must be the first import for Eventlet
 
@@ -8,8 +5,11 @@ import os
 import base64
 import signal
 import atexit
+import requests
+import time
 from functools import wraps
 from dotenv import load_dotenv
+from datetime import datetime
 
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 from flask_socketio import SocketIO
@@ -24,6 +24,14 @@ load_dotenv()
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "supersecretkey")
 MONGO_URI = os.environ.get("MONGO_URI")
+PAYSTACK_SECRET_KEY = os.environ.get("PAYSTACK_SECRET_KEY")
+PAYSTACK_PUBLIC_KEY = os.environ.get("PAYSTACK_PUBLIC_KEY")
+
+# ==============================
+# Payment Configuration
+# ==============================
+DOWNLOAD_COST_ZAR = 50  # 50 ZAR per PDF download
+PAYSTACK_CURRENCY = "ZAR"  # South African Rand
 
 # ==============================
 # Flask setup
@@ -48,6 +56,7 @@ client = MongoClient(
 db = client.kgosibiodrone
 users_col = db.users
 results_col = db.results
+transactions_col = db.transactions
 
 # ==============================
 # Shared state
@@ -100,12 +109,63 @@ def login_required(f):
     return decorated
 
 # ==============================
+# Paystack helper functions
+# ==============================
+def initialize_paystack_payment(email, amount, metadata, reference=None):
+    """Initialize a Paystack payment."""
+    url = "https://api.paystack.co/transaction/initialize"
+    headers = {
+        "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "email": email,
+        "amount": amount,  # Amount in currency subunit (cents for ZAR)
+        "currency": PAYSTACK_CURRENCY,
+        "metadata": metadata
+    }
+    
+    # Add custom reference if provided
+    if reference:
+        payload["reference"] = reference
+    
+    try:
+        print(f"🔍 Paystack Request - Email: {email}, Amount: {amount} ({PAYSTACK_CURRENCY})")
+        response = requests.post(url, json=payload, headers=headers)
+        print(f"📊 Paystack Response Status: {response.status_code}")
+        print(f"📊 Paystack Response Body: {response.text}")
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️ Paystack initialization error: {e}")
+        if hasattr(e, 'response') and hasattr(e.response, 'text'):
+            print(f"⚠️ Response body: {e.response.text}")
+        return None
+
+def verify_paystack_payment(reference):
+    """Verify a Paystack payment using reference."""
+    url = f"https://api.paystack.co/transaction/verify/{reference}"
+    headers = {
+        "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}"
+    }
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️ Paystack verification error: {e}")
+        return None
+
+# ==============================
 # Routes
 # ==============================
 @app.route("/")
 @login_required
 def index():
-    return render_template("index.html")
+    return render_template("index.html", 
+                         paystack_public_key=PAYSTACK_PUBLIC_KEY,
+                         download_cost_zar=DOWNLOAD_COST_ZAR,
+                         paystack_currency=PAYSTACK_CURRENCY)
 
 
 # --- Authentication ---
@@ -129,18 +189,36 @@ def login():
 def register():
     if request.method == "POST":
         username = request.form.get("username")
+        email = request.form.get("email")
         password = request.form.get("password")
+        confirm_password = request.form.get("confirm_password")
+
+        # Validation
+        if not username or not email or not password:
+            return render_template("register.html", error="All fields are required")
+        
+        if password != confirm_password:
+            return render_template("register.html", error="Passwords do not match")
+        
+        if "@" not in email or "." not in email:
+            return render_template("register.html", error="Invalid email address")
 
         if users_col.find_one({"username": username}):
-            return render_template("register.html", error="User already exists")
+            return render_template("register.html", error="Username already exists")
+        
+        if users_col.find_one({"email": email}):
+            return render_template("register.html", error="Email already registered")
 
         users_col.insert_one({
             "username": username,
-            "password": generate_password_hash(password)
+            "email": email,
+            "password": generate_password_hash(password),
+            "verified": False,
+            "created_at": datetime.utcnow()
         })
 
         session["user"] = username
-        print(f"✅ New user registered: {username}")
+        print(f"✅ New user registered: {username} ({email})")
         return redirect(url_for("index"))
 
     return render_template("register.html")
@@ -292,6 +370,142 @@ def get_history():
         return jsonify([]), 500
 
 
+# --- Paystack Payment Endpoints ---
+@app.route("/api/initialize-payment", methods=["POST"])
+@login_required
+def initialize_payment():
+    """Initialize Paystack payment for PDF download in ZAR."""
+    try:
+        data = request.json
+        amount_zar = data.get("amount", DOWNLOAD_COST_ZAR)
+        
+        # Convert ZAR to cents (Paystack uses currency subunits)
+        amount_cents = int(amount_zar * 100)
+        disease_name = data.get("disease_name", "Report")
+        
+        # Get user from database
+        user = users_col.find_one({"username": session["user"]})
+        if not user:
+            return jsonify({"status": "error", "message": "User not found"}), 400
+        
+        # Use actual email from database
+        email = user.get("email")
+        if not email or "@" not in email:
+            return jsonify({"status": "error", "message": "User email not set. Please update your profile."}), 400
+        
+        metadata = {
+            "username": session["user"],
+            "disease": disease_name,
+            "action": "pdf_download",
+            "email": email,
+            "currency": PAYSTACK_CURRENCY
+        }
+        
+        print(f"💳 Initializing payment - Email: {email}, Amount: R{amount_zar}.00 ({amount_cents} cents)")
+        
+        # Generate unique reference with timestamp to avoid duplicates
+        unique_ref = f"bd{int(time.time() * 1000)}"
+        response = initialize_paystack_payment(email, amount_cents, metadata, reference=unique_ref)
+        
+        if not response:
+            return jsonify({"status": "error", "message": "Payment service unavailable"}), 500
+        
+        if response.get("status"):
+            transaction_data = {
+                "username": session["user"],
+                "email": email,
+                "reference": response["data"]["reference"],
+                "amount_zar": amount_zar,
+                "amount_cents": amount_cents,
+                "disease": disease_name,
+                "status": "pending",
+                "currency": PAYSTACK_CURRENCY,
+                "timestamp": datetime.utcnow()
+            }
+            transactions_col.insert_one(transaction_data)
+            print(f"✅ Payment initialized - Reference: {response['data']['reference']}")
+            return jsonify({
+                "status": "ok",
+                "authorization_url": response["data"]["authorization_url"],
+                "access_code": response["data"]["access_code"],
+                "reference": response["data"]["reference"]
+            }), 200
+        else:
+            error_msg = response.get("message", "Unknown error")
+            print(f"⚠️ Paystack error: {error_msg}")
+            return jsonify({"status": "error", "message": error_msg}), 400
+    except Exception as e:
+        print(f"⚠️ Error initializing payment: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/verify-payment", methods=["POST"])
+@login_required
+def verify_payment():
+    """Verify Paystack payment and allow PDF download."""
+    try:
+        data = request.json
+        reference = data.get("reference")
+        
+        if not reference:
+            return jsonify({"status": "error", "message": "No reference provided"}), 400
+        
+        response = verify_paystack_payment(reference)
+        
+        if response and response.get("status") and response["data"]["status"] == "success":
+            # Update transaction status
+            transactions_col.update_one(
+                {"reference": reference},
+                {"$set": {"status": "completed", "verified_at": datetime.utcnow()}}
+            )
+            print(f"✅ Payment verified for {session['user']}: {reference}")
+            return jsonify({
+                "status": "ok",
+                "message": "Payment verified successfully",
+                "can_download": True
+            }), 200
+        
+        return jsonify({
+            "status": "error",
+            "message": "Payment verification failed"
+        }), 400
+    except Exception as e:
+        print(f"⚠️ Error verifying payment: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/transaction-history", methods=["GET"])
+@login_required
+def transaction_history():
+    """Get user's transaction history."""
+    try:
+        username = session["user"]
+        transactions = list(transactions_col.find(
+            {"username": username}
+        ).sort("timestamp", -1))
+        
+        for t in transactions:
+            t["_id"] = str(t["_id"])
+            t["timestamp"] = t["timestamp"].isoformat()
+        
+        return jsonify(transactions), 200
+    except Exception as e:
+        print(f"⚠️ Error retrieving transactions: {e}")
+        return jsonify([]), 500
+
+
+@app.route("/api/payment-config", methods=["GET"])
+def payment_config():
+    """Return payment configuration to frontend."""
+    return jsonify({
+        "download_cost_zar": DOWNLOAD_COST_ZAR,
+        "currency": PAYSTACK_CURRENCY,
+        "paystack_public_key": PAYSTACK_PUBLIC_KEY
+    }), 200
+
+
 # --- Health check endpoint ---
 @app.route("/health", methods=["GET"])
 def health_check():
@@ -345,6 +559,7 @@ def handle_disconnect():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     print(f"🚀 Starting Kgosi BioDrone server on 0.0.0.0:{port}")
+    print(f"💳 Payment Configuration: R{DOWNLOAD_COST_ZAR}.00 ZAR per download")
     try:
         socketio.run(app, host="0.0.0.0", port=port, debug=False)
     except KeyboardInterrupt:
