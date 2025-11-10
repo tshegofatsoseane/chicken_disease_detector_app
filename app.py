@@ -40,8 +40,9 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 # ==============================
 client = MongoClient(
     MONGO_URI,
-    tls=True,                       # Required for Atlas
-    tlsAllowInvalidCertificates=False  # Change to True for testing only
+    tls=True,
+    tlsAllowInvalidCertificates=True,  # Change this to True
+    tlsInsecure=True  # Add this
 )
 db = client.kgosibiodrone
 users_col = db.users
