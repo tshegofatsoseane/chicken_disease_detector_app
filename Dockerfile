@@ -2,28 +2,25 @@
 # Dockerfile for Chicken Disease Detector App
 # ==============================
 
-# Use official Python 3.11 slim image
 FROM python:3.11-slim
 
-# Set working directory
+# Install CA certificates to fix MongoDB SSL error
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
+    update-ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Copy requirements first for caching
 COPY requirements.txt .
 
-# Upgrade pip and install dependencies
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-# Copy app files
 COPY . .
 
-# Expose port (matches Flask/SocketIO)
 EXPOSE 8000
 
-# Set environment variables (can override on Render)
 ENV FLASK_ENV=production
 ENV PYTHONUNBUFFERED=1
 
-# Command to run the app with Eventlet
 CMD ["python", "-u", "app.py"]
