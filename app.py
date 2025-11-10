@@ -9,7 +9,7 @@ import requests
 import time
 from functools import wraps
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 from flask_socketio import SocketIO
@@ -31,6 +31,7 @@ PAYSTACK_PUBLIC_KEY = os.environ.get("PAYSTACK_PUBLIC_KEY")
 # Payment Configuration
 # ==============================
 DOWNLOAD_COST_ZAR = 50  # 50 ZAR per PDF download
+SUBSCRIPTION_COST_ZAR = 500  # 500 ZAR per month
 PAYSTACK_CURRENCY = "ZAR"  # South African Rand
 
 # ==============================
@@ -57,6 +58,7 @@ db = client.kgosibiodrone
 users_col = db.users
 results_col = db.results
 transactions_col = db.transactions
+subscriptions_col = db.subscriptions
 
 # ==============================
 # Shared state
@@ -73,19 +75,15 @@ def cleanup_resources():
     global latest_frame, captured_frame, pi_start_trigger
     try:
         print("🛑 Backend shutting down - cleaning up resources...")
-        # Stop Pi feed
         pi_start_trigger["start"] = False
-        # Clear frame buffers
         latest_frame = None
         captured_frame = None
-        # Close MongoDB connection
         if client:
             client.close()
             print("✓ MongoDB connection closed")
     except Exception as e:
         print(f"⚠️ Error during cleanup: {e}")
 
-# Register cleanup handlers
 atexit.register(cleanup_resources)
 
 def signal_handler(sig, frame):
@@ -109,6 +107,41 @@ def login_required(f):
     return decorated
 
 # ==============================
+# Subscription helper functions
+# ==============================
+def check_user_subscription(username):
+    """Check if user has active premium subscription."""
+    subscription = subscriptions_col.find_one({
+        "username": username,
+        "status": "active",
+        "end_date": {"$gt": datetime.utcnow()}
+    })
+    return subscription is not None
+
+def get_user_subscription_status(username):
+    """Get detailed subscription status for user."""
+    subscription = subscriptions_col.find_one(
+        {"username": username},
+        sort=[("end_date", -1)]
+    )
+    
+    if not subscription:
+        return {"is_premium": False, "status": "none"}
+    
+    is_active = (
+        subscription["status"] == "active" and 
+        subscription["end_date"] > datetime.utcnow()
+    )
+    
+    return {
+        "is_premium": is_active,
+        "status": subscription["status"],
+        "start_date": subscription.get("start_date"),
+        "end_date": subscription.get("end_date"),
+        "days_remaining": (subscription["end_date"] - datetime.utcnow()).days if is_active else 0
+    }
+
+# ==============================
 # Paystack helper functions
 # ==============================
 def initialize_paystack_payment(email, amount, metadata, reference=None):
@@ -120,12 +153,11 @@ def initialize_paystack_payment(email, amount, metadata, reference=None):
     }
     payload = {
         "email": email,
-        "amount": amount,  # Amount in currency subunit (cents for ZAR)
+        "amount": amount,
         "currency": PAYSTACK_CURRENCY,
         "metadata": metadata
     }
     
-    # Add custom reference if provided
     if reference:
         payload["reference"] = reference
     
@@ -133,7 +165,6 @@ def initialize_paystack_payment(email, amount, metadata, reference=None):
         print(f"🔍 Paystack Request - Email: {email}, Amount: {amount} ({PAYSTACK_CURRENCY})")
         response = requests.post(url, json=payload, headers=headers)
         print(f"📊 Paystack Response Status: {response.status_code}")
-        print(f"📊 Paystack Response Body: {response.text}")
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -162,10 +193,16 @@ def verify_paystack_payment(reference):
 @app.route("/")
 @login_required
 def index():
+    username = session["user"]
+    subscription_status = get_user_subscription_status(username)
+    
     return render_template("index.html", 
                          paystack_public_key=PAYSTACK_PUBLIC_KEY,
                          download_cost_zar=DOWNLOAD_COST_ZAR,
-                         paystack_currency=PAYSTACK_CURRENCY)
+                         subscription_cost_zar=SUBSCRIPTION_COST_ZAR,
+                         paystack_currency=PAYSTACK_CURRENCY,
+                         is_premium=subscription_status["is_premium"],
+                         subscription_status=subscription_status)
 
 
 # --- Authentication ---
@@ -193,7 +230,6 @@ def register():
         password = request.form.get("password")
         confirm_password = request.form.get("confirm_password")
 
-        # Validation
         if not username or not email or not password:
             return render_template("register.html", error="All fields are required")
         
@@ -223,13 +259,158 @@ def register():
 
     return render_template("register.html")
 
-
 @app.route("/logout")
 def logout():
     user = session.get("user", "Unknown")
     session.clear()
     print(f"👋 User logged out: {user}")
     return redirect(url_for("login"))
+
+# --- Subscription Endpoints ---
+@app.route("/api/subscription-status", methods=["GET"])
+@login_required
+def subscription_status():
+    """Get user's subscription status."""
+    try:
+        username = session["user"]
+        status = get_user_subscription_status(username)
+        return jsonify(status), 200
+    except Exception as e:
+        print(f"⚠️ Error getting subscription status: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/initialize-subscription", methods=["POST"])
+@login_required
+def initialize_subscription():
+    """Initialize subscription payment."""
+    try:
+        username = session["user"]
+        
+        # Check if user already has active subscription
+        if check_user_subscription(username):
+            return jsonify({
+                "status": "error",
+                "message": "You already have an active subscription"
+            }), 400
+        
+        user = users_col.find_one({"username": username})
+        if not user:
+            return jsonify({"status": "error", "message": "User not found"}), 400
+        
+        email = user.get("email")
+        if not email or "@" not in email:
+            return jsonify({
+                "status": "error",
+                "message": "User email not set. Please update your profile."
+            }), 400
+        
+        amount_cents = int(SUBSCRIPTION_COST_ZAR * 100)
+        
+        metadata = {
+            "username": username,
+            "email": email,
+            "action": "subscription",
+            "subscription_type": "premium_monthly",
+            "currency": PAYSTACK_CURRENCY
+        }
+        
+        print(f"💎 Initializing subscription - Email: {email}, Amount: R{SUBSCRIPTION_COST_ZAR}.00")
+        
+        unique_ref = f"sub{int(time.time() * 1000)}"
+        response = initialize_paystack_payment(email, amount_cents, metadata, reference=unique_ref)
+        
+        if not response:
+            return jsonify({"status": "error", "message": "Payment service unavailable"}), 500
+        
+        if response.get("status"):
+            transaction_data = {
+                "username": username,
+                "email": email,
+                "reference": response["data"]["reference"],
+                "amount_zar": SUBSCRIPTION_COST_ZAR,
+                "amount_cents": amount_cents,
+                "type": "subscription",
+                "status": "pending",
+                "currency": PAYSTACK_CURRENCY,
+                "timestamp": datetime.utcnow()
+            }
+            transactions_col.insert_one(transaction_data)
+            
+            print(f"✅ Subscription payment initialized - Reference: {response['data']['reference']}")
+            return jsonify({
+                "status": "ok",
+                "authorization_url": response["data"]["authorization_url"],
+                "access_code": response["data"]["access_code"],
+                "reference": response["data"]["reference"]
+            }), 200
+        else:
+            error_msg = response.get("message", "Unknown error")
+            print(f"⚠️ Paystack error: {error_msg}")
+            return jsonify({"status": "error", "message": error_msg}), 400
+    except Exception as e:
+        print(f"⚠️ Error initializing subscription: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route("/api/verify-subscription", methods=["POST"])
+@login_required
+def verify_subscription():
+    """Verify subscription payment and activate premium features."""
+    try:
+        data = request.json
+        reference = data.get("reference")
+        username = session["user"]
+        
+        if not reference:
+            return jsonify({"status": "error", "message": "No reference provided"}), 400
+        
+        response = verify_paystack_payment(reference)
+        
+        if response and response.get("status") and response["data"]["status"] == "success":
+            # Update transaction status
+            transactions_col.update_one(
+                {"reference": reference},
+                {"$set": {"status": "completed", "verified_at": datetime.utcnow()}}
+            )
+            
+            # Create or update subscription
+            start_date = datetime.utcnow()
+            end_date = start_date + timedelta(days=30)
+            
+            subscriptions_col.update_one(
+                {"username": username},
+                {
+                    "$set": {
+                        "username": username,
+                        "status": "active",
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "payment_reference": reference,
+                        "amount_paid": SUBSCRIPTION_COST_ZAR,
+                        "updated_at": datetime.utcnow()
+                    }
+                },
+                upsert=True
+            )
+            
+            print(f"✅ Subscription activated for {username}: {reference}")
+            return jsonify({
+                "status": "ok",
+                "message": "Subscription activated successfully",
+                "end_date": end_date.isoformat()
+            }), 200
+        
+        return jsonify({
+            "status": "error",
+            "message": "Payment verification failed"
+        }), 400
+    except Exception as e:
+        print(f"⚠️ Error verifying subscription: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 # --- Pi Endpoints ---
 @app.route("/api/frame", methods=["POST"])
@@ -246,7 +427,6 @@ def receive_frame():
 
         latest_frame = base64.b64encode(image_file.read()).decode("utf-8")
         
-        # Emit to all connected WebSocket clients
         socketio.emit("new_frame", {
             "frame": latest_frame,
             "disease_id": disease_id,
@@ -319,7 +499,6 @@ def analyze_frame():
         if not captured_frame:
             return jsonify({"status": "error", "message": "No captured frame"}), 400
 
-        # Placeholder analysis - in production, this would use ML model
         disease_id = 0
         confidence = 0.95
 
@@ -335,7 +514,6 @@ def analyze_frame():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-# --- Save analysis results ---
 @app.route("/save-result", methods=["POST"])
 @login_required
 def save_result():
@@ -370,31 +548,37 @@ def get_history():
         return jsonify([]), 500
 
 
-# --- Paystack Payment Endpoints ---
+# --- Payment Endpoints ---
 @app.route("/api/initialize-payment", methods=["POST"])
 @login_required
 def initialize_payment():
     """Initialize Paystack payment for PDF download in ZAR."""
     try:
+        username = session["user"]
         data = request.json
         amount_zar = data.get("amount", DOWNLOAD_COST_ZAR)
         
-        # Convert ZAR to cents (Paystack uses currency subunits)
+        # Check if user has premium subscription (free downloads)
+        if check_user_subscription(username):
+            return jsonify({
+                "status": "ok",
+                "is_premium": True,
+                "message": "Premium user - download is free"
+            }), 200
+        
         amount_cents = int(amount_zar * 100)
         disease_name = data.get("disease_name", "Report")
         
-        # Get user from database
-        user = users_col.find_one({"username": session["user"]})
+        user = users_col.find_one({"username": username})
         if not user:
             return jsonify({"status": "error", "message": "User not found"}), 400
         
-        # Use actual email from database
         email = user.get("email")
         if not email or "@" not in email:
             return jsonify({"status": "error", "message": "User email not set. Please update your profile."}), 400
         
         metadata = {
-            "username": session["user"],
+            "username": username,
             "disease": disease_name,
             "action": "pdf_download",
             "email": email,
@@ -403,7 +587,6 @@ def initialize_payment():
         
         print(f"💳 Initializing payment - Email: {email}, Amount: R{amount_zar}.00 ({amount_cents} cents)")
         
-        # Generate unique reference with timestamp to avoid duplicates
         unique_ref = f"bd{int(time.time() * 1000)}"
         response = initialize_paystack_payment(email, amount_cents, metadata, reference=unique_ref)
         
@@ -412,12 +595,13 @@ def initialize_payment():
         
         if response.get("status"):
             transaction_data = {
-                "username": session["user"],
+                "username": username,
                 "email": email,
                 "reference": response["data"]["reference"],
                 "amount_zar": amount_zar,
                 "amount_cents": amount_cents,
                 "disease": disease_name,
+                "type": "download",
                 "status": "pending",
                 "currency": PAYSTACK_CURRENCY,
                 "timestamp": datetime.utcnow()
@@ -455,7 +639,6 @@ def verify_payment():
         response = verify_paystack_payment(reference)
         
         if response and response.get("status") and response["data"]["status"] == "success":
-            # Update transaction status
             transactions_col.update_one(
                 {"reference": reference},
                 {"$set": {"status": "completed", "verified_at": datetime.utcnow()}}
@@ -501,17 +684,16 @@ def payment_config():
     """Return payment configuration to frontend."""
     return jsonify({
         "download_cost_zar": DOWNLOAD_COST_ZAR,
+        "subscription_cost_zar": SUBSCRIPTION_COST_ZAR,
         "currency": PAYSTACK_CURRENCY,
         "paystack_public_key": PAYSTACK_PUBLIC_KEY
     }), 200
 
 
-# --- Health check endpoint ---
 @app.route("/health", methods=["GET"])
 def health_check():
     """Health check endpoint for monitoring."""
     try:
-        # Test MongoDB connection
         db.command("ping")
         return jsonify({
             "status": "healthy",
@@ -523,7 +705,6 @@ def health_check():
         return jsonify({"status": "unhealthy", "error": str(e)}), 500
 
 
-# --- Error handlers ---
 @app.errorhandler(404)
 def not_found(error):
     """Handle 404 errors."""
@@ -537,9 +718,6 @@ def internal_error(error):
     return jsonify({"status": "error", "message": "Internal server error"}), 500
 
 
-# ==============================
-# SocketIO Events
-# ==============================
 @socketio.on("connect")
 def handle_connect():
     """Handle new client connection."""
@@ -553,13 +731,12 @@ def handle_disconnect():
     print("🔌 Client disconnected")
 
 
-# ==============================
-# Run server
-# ==============================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
     print(f"🚀 Starting Kgosi BioDrone server on 0.0.0.0:{port}")
-    print(f"💳 Payment Configuration: R{DOWNLOAD_COST_ZAR}.00 ZAR per download")
+    print(f"💳 Payment Configuration:")
+    print(f"   - Download: R{DOWNLOAD_COST_ZAR}.00 ZAR per PDF")
+    print(f"   - Subscription: R{SUBSCRIPTION_COST_ZAR}.00 ZAR per month")
     try:
         socketio.run(app, host="0.0.0.0", port=port, debug=False)
     except KeyboardInterrupt:

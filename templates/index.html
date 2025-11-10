@@ -86,6 +86,16 @@
       opacity: 0.5;
       cursor: not-allowed;
     }
+    .premium-badge {
+      background: linear-gradient(135deg, #ffd700, #ffed4e);
+      color: #7c3aed;
+      padding: 0.25rem 0.75rem;
+      border-radius: 1rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      box-shadow: 0 2px 8px rgba(255, 215, 0, 0.3);
+    }
   </style>
 </head>
 <body class="bg-gray-50 text-gray-900">
@@ -95,11 +105,17 @@
     <div class="flex items-center space-x-3">
       <img src="{{ url_for('static', filename='applogo.png') }}" alt="Kgosi BioDrone Logo" class="h-10 w-10 rounded-lg shadow-sm" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect fill=%22%237c3aed%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-size=%2240%22 fill=%22white%22 text-anchor=%22middle%22 dy=%22.3em%22%3E🤖%3C/text%3E%3C/svg%3E'">
       <div>
-        <h1 class="text-xl font-semibold text-purple-700">Kgosi BioDrone</h1>
+        <div class="flex items-center space-x-2">
+          <h1 class="text-xl font-semibold text-purple-700">Kgosi BioDrone</h1>
+          <span id="premium-badge" class="premium-badge hidden">💎 Premium</span>
+        </div>
         <p class="text-sm text-gray-500">AI-Powered Poultry Health Monitoring System</p>
       </div>
     </div>
-    <div class="space-x-3">
+    <div class="space-x-3 flex items-center">
+      <button id="subscribe-btn" class="btn-primary" onclick="openSubscriptionModal()">
+        💎 Go Premium
+      </button>
       <button class="btn-secondary" onclick="alert('Settings coming soon!')">⚙️ Settings</button>
       <button class="btn-secondary" onclick="checkConnection()">📶 Connection</button>
       <a href="{{ url_for('logout') }}" class="btn-secondary">🚪 Logout</a>
@@ -167,6 +183,78 @@
     <p class="text-white font-medium">Analyzing frame with BioDrone AI...</p>
   </div>
 
+  <!-- Subscription Modal -->
+  <div id="subscription-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-8 mx-4">
+      <div class="text-center mb-6">
+        <div class="inline-block p-4 bg-gradient-to-br from-purple-500 to-purple-700 rounded-full mb-4">
+          <svg class="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path>
+          </svg>
+        </div>
+        <h2 class="text-3xl font-bold text-gray-900 mb-2">Go Premium</h2>
+        <p class="text-gray-600">Unlock unlimited features and advanced capabilities</p>
+      </div>
+
+      <div class="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-6 mb-6">
+        <div class="text-center mb-4">
+          <span class="text-5xl font-bold text-purple-700">R500</span>
+          <span class="text-gray-600 text-lg">/month</span>
+        </div>
+        
+        <ul class="space-y-3 text-left">
+          <li class="flex items-start">
+            <svg class="w-6 h-6 text-green-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            <span class="text-gray-700"><strong>Unlimited</strong> AI analyses per month</span>
+          </li>
+          <li class="flex items-start">
+            <svg class="w-6 h-6 text-green-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            <span class="text-gray-700"><strong>Free</strong> PDF report downloads</span>
+          </li>
+          <li class="flex items-start">
+            <svg class="w-6 h-6 text-green-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            <span class="text-gray-700"><strong>Priority</strong> customer support</span>
+          </li>
+          <li class="flex items-start">
+            <svg class="w-6 h-6 text-green-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            <span class="text-gray-700"><strong>Advanced</strong> analytics dashboard</span>
+          </li>
+          <li class="flex items-start">
+            <svg class="w-6 h-6 text-green-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            <span class="text-gray-700"><strong>Scheduled</strong> monitoring alerts</span>
+          </li>
+          <li class="flex items-start">
+            <svg class="w-6 h-6 text-green-500 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+            </svg>
+            <span class="text-gray-700"><strong>Export</strong> historical data</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="space-y-3">
+        <button id="subscribe-pay-btn" class="w-full btn-primary py-3 text-lg" onclick="processSubscription()">
+          🔒 Subscribe Now
+        </button>
+        <button class="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50" onclick="closeSubscriptionModal()">
+          Maybe Later
+        </button>
+      </div>
+      
+      <p class="text-xs text-gray-500 mt-4 text-center">Secure payment powered by Paystack (ZAR)</p>
+    </div>
+  </div>
+
   <!-- Payment Modal -->
   <div id="payment-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
     <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 mx-4">
@@ -230,7 +318,9 @@
   // Payment configuration (initialized from backend)
   let PAYSTACK_PUBLIC_KEY = "{{ paystack_public_key }}";
   let DOWNLOAD_COST_ZAR = 50;
+  let SUBSCRIPTION_COST_ZAR = 500;
   let PAYSTACK_CURRENCY = "ZAR";
+  let IS_PREMIUM = false;
 
   // === STATE VARIABLES ===
   let isLive = false;
@@ -311,6 +401,119 @@
       care: { immediate:'Check feed supply.', daily:'Observe eating behavior.', weekly:'Adjust feed if necessary.', prevention:'Store feed properly to avoid contamination.'} 
     }
   };
+
+  // === SUBSCRIPTION FUNCTIONS ===
+  async function loadSubscriptionStatus() {
+    try {
+      const res = await fetch("/api/subscription-status");
+      const status = await res.json();
+      IS_PREMIUM = status.is_premium;
+      
+      if (IS_PREMIUM) {
+        document.getElementById("premium-badge").classList.remove("hidden");
+        document.getElementById("subscribe-btn").textContent = "✅ Premium Active";
+        document.getElementById("subscribe-btn").disabled = true;
+        document.getElementById("subscribe-btn").classList.add("opacity-75");
+      }
+      
+      console.log("Subscription status loaded:", status);
+    } catch (e) {
+      console.error("Error loading subscription status:", e);
+    }
+  }
+
+  function openSubscriptionModal() {
+    if (IS_PREMIUM) {
+      alert("You already have an active premium subscription!");
+      return;
+    }
+    document.getElementById("subscription-modal").classList.remove("hidden");
+  }
+
+  function closeSubscriptionModal() {
+    document.getElementById("subscription-modal").classList.add("hidden");
+  }
+
+  async function processSubscription() {
+    if (paymentInProgress) return;
+    paymentInProgress = true;
+    
+    const payBtn = document.getElementById("subscribe-pay-btn");
+    payBtn.disabled = true;
+    payBtn.textContent = "Processing...";
+
+    try {
+      console.log("Initializing subscription payment...");
+      
+      const initRes = await fetch("/api/initialize-subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+
+      const initData = await initRes.json();
+      console.log("Subscription init response:", initData);
+      
+      if (!initData.reference) {
+        alert("❌ Failed to initialize subscription: " + (initData.message || "Unknown error"));
+        paymentInProgress = false;
+        payBtn.disabled = false;
+        payBtn.textContent = "🔒 Subscribe Now";
+        return;
+      }
+
+      const handler = PaystackPop.setup({
+        key: PAYSTACK_PUBLIC_KEY,
+        email: `test+${Date.now()}@biodrone.test`,
+        amount: SUBSCRIPTION_COST_ZAR * 100,
+        ref: initData.reference,
+        currency: "ZAR",
+        onClose: function() {
+          console.log('Subscription modal closed');
+          paymentInProgress = false;
+          payBtn.disabled = false;
+          payBtn.textContent = "🔒 Subscribe Now";
+        },
+        onSuccess: function(response) {
+          console.log('Subscription payment successful:', response);
+          verifySubscription(response.reference);
+        }
+      });
+      handler.openIframe();
+    } catch (e) {
+      console.error("Subscription error:", e);
+      alert("❌ Subscription error: " + e.message);
+      paymentInProgress = false;
+      payBtn.disabled = false;
+      payBtn.textContent = "🔒 Subscribe Now";
+    }
+  }
+
+  async function verifySubscription(reference) {
+    try {
+      const verifyRes = await fetch("/api/verify-subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reference })
+      });
+
+      const verifyData = await verifyRes.json();
+      if (verifyData.status === "ok") {
+        alert("✅ Subscription activated! Welcome to BioDrone Premium! 💎");
+        closeSubscriptionModal();
+        await loadSubscriptionStatus();
+        location.reload();
+      } else {
+        alert("❌ Subscription verification failed");
+      }
+    } catch (e) {
+      console.error("Verification error:", e);
+      alert("Verification error: " + e.message);
+    } finally {
+      paymentInProgress = false;
+      document.getElementById("subscribe-pay-btn").disabled = false;
+      document.getElementById("subscribe-pay-btn").textContent = "🔒 Subscribe Now";
+    }
+  }
 
   // === LOAD HISTORY ===
   async function loadHistory() {
@@ -515,13 +718,21 @@
   async function initiateDownload() {
     if (!latestReport) return alert("No report to download!");
     
+    // Check if user is premium - if so, download directly
+    if (IS_PREMIUM) {
+      alert("✅ Premium user - downloading your report for free!");
+      downloadPDF();
+      return;
+    }
+    
+    // Non-premium users need to pay
     const disease = latestReport.disease;
     document.getElementById("payment-disease").textContent = disease.name;
     document.getElementById("payment-amount").textContent = `R${DOWNLOAD_COST_ZAR}.00`;
     document.getElementById("payment-total").textContent = `R${DOWNLOAD_COST_ZAR}.00`;
     
-    closeModal();  // Close analysis modal
-    openPaymentModal();  // Open payment modal
+    closeModal();
+    openPaymentModal();
   }
 
   async function processPayment() {
@@ -548,6 +759,17 @@
       const initData = await initRes.json();
       console.log("Payment init response:", initData);
       
+      // Check if user is premium (backend response)
+      if (initData.is_premium) {
+        alert("✅ Premium user - downloading your report for free!");
+        closePaymentModal();
+        downloadPDF();
+        paymentInProgress = false;
+        payBtn.disabled = false;
+        payBtn.textContent = "🔒 Pay with Paystack";
+        return;
+      }
+      
       if (!initData.reference) {
         alert("❌ Failed to initialize payment: " + (initData.message || "Unknown error"));
         paymentInProgress = false;
@@ -558,7 +780,7 @@
 
       const handler = PaystackPop.setup({
         key: PAYSTACK_PUBLIC_KEY,
-        email: `test+${Date.now()}@biodrone.test`,  // Use unique email per transaction
+        email: `test+${Date.now()}@biodrone.test`,
         amount: DOWNLOAD_COST_ZAR * 100,
         ref: initData.reference,
         currency: "ZAR",
@@ -661,10 +883,10 @@
     try {
       // Add header
       pdf.setFontSize(24);
-      pdf.setTextColor(124, 58, 237); // Purple
+      pdf.setTextColor(124, 58, 237);
       pdf.text("Kgosi BioDrone", 20, 20);
       pdf.setFontSize(10);
-      pdf.setTextColor(107, 114, 128); // Gray
+      pdf.setTextColor(107, 114, 128);
       pdf.text("AI-Powered Poultry Health Monitoring System", 20, 28);
 
       // Add image if available
@@ -685,7 +907,7 @@
       yPos += 10;
 
       pdf.setFontSize(11);
-      pdf.setTextColor(31, 41, 55); // Dark gray
+      pdf.setTextColor(31, 41, 55);
       pdf.text(`Disease Detected: ${disease.name}`, 20, yPos);
       yPos += 8;
       pdf.text(`Severity Level: ${disease.severity.toUpperCase()}`, 20, yPos);
@@ -727,7 +949,7 @@
 
       // Add footer
       pdf.setFontSize(8);
-      pdf.setTextColor(156, 163, 175); // Light gray
+      pdf.setTextColor(156, 163, 175);
       pdf.text("This report was generated by Kgosi BioDrone AI Analysis System", 20, pdf.internal.pageSize.height - 10);
 
       pdf.save(`${disease.name.replace(/\s+/g,"_")}_Report_${new Date().getTime()}.pdf`);
@@ -752,9 +974,10 @@
       const res = await fetch("/api/payment-config");
       const config = await res.json();
       DOWNLOAD_COST_ZAR = config.download_cost_zar;
+      SUBSCRIPTION_COST_ZAR = config.subscription_cost_zar;
       PAYSTACK_CURRENCY = config.currency;
       PAYSTACK_PUBLIC_KEY = config.paystack_public_key;
-      console.log(`✅ Payment config loaded: R${DOWNLOAD_COST_ZAR}.00 ${PAYSTACK_CURRENCY}`);
+      console.log(`✅ Payment config loaded: Download R${DOWNLOAD_COST_ZAR}.00, Subscription R${SUBSCRIPTION_COST_ZAR}.00 ${PAYSTACK_CURRENCY}`);
     } catch (e) {
       console.error("Error loading payment config:", e);
     }
@@ -762,6 +985,7 @@
 
   document.addEventListener('DOMContentLoaded', async () => {
     await initializePaymentConfig();
+    await loadSubscriptionStatus();
     loadHistory();
     console.log("🚀 BioDrone interface loaded");
   });

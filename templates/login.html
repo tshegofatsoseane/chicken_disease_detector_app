@@ -6,8 +6,29 @@
   <title>Login - Kgosi BioDrone</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
+    /* Vanilla CSS for input boxes */
     .input-field {
-      @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent;
+      width: 100%;
+      height: 10px;
+      padding: 16px 20px;
+      border: 1px solid #9f7aea; /* Purple border */
+      border-radius: 5px;
+      background-color: #f5f3ff; /* Light purple background */
+      font-size: 18px;
+      color: #333;
+      transition: border-color 0.3s, box-shadow 0.3s;
+    }
+
+    .input-field:focus {
+      outline: none;
+      border-color: #7c3aed; /* Darker purple */
+      box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.3);
+    }
+
+    .checkbox-field {
+      width: 20px;
+      height: 20px;
+      accent-color: #7c3aed; /* Purple checkbox */
     }
   </style>
 </head>
@@ -63,7 +84,7 @@
             type="checkbox" 
             id="remember" 
             name="remember"
-            class="rounded"
+            class="checkbox-field"
           >
           <label for="remember" class="text-sm text-gray-600">
             Remember me
@@ -73,7 +94,7 @@
         <!-- Submit Button -->
         <button 
           type="submit" 
-          class="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2.5 rounded-lg transition duration-200 mt-6"
+          class="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 rounded-lg transition duration-200 mt-6 text-lg"
         >
           Sign In
         </button>
