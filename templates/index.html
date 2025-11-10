@@ -156,8 +156,10 @@
   socket.on("pi_stopped", () => {
     isLive = false;
     liveFrame = null;
-    video.classList.add("hidden");
-    placeholder.classList.remove("hidden");
+    if (!capturedFrame) {
+      video.classList.add("hidden");
+      placeholder.classList.remove("hidden");
+    }
     label.innerText = "🛑 Feed stopped.";
     toggleButtons(true);
   });
@@ -166,12 +168,15 @@
     hasCapture = true;
     isLive = false;
     capturedFrame = "data:image/jpeg;base64," + d.frame;
-    latestReport = { image: capturedFrame }; // store for modal
+    latestReport = { image: capturedFrame };
     video.src = capturedFrame;
     video.classList.remove("hidden");
     placeholder.classList.add("hidden");
     label.innerText = "📸 Frame captured!";
     document.getElementById("analyze").disabled = false;
+    document.getElementById("stop").disabled = true;
+    document.getElementById("start").disabled = false;
+    document.getElementById("reset").disabled = false;
   });
 
   socket.on("frame_analyzed", d => {
@@ -188,30 +193,65 @@
     hasCapture = false;
     liveFrame = null;
     capturedFrame = null;
+    latestReport = null;
     video.classList.add("hidden");
     placeholder.classList.remove("hidden");
     label.innerText = "🔄 Starting feed...";
     toggleButtons(false);
+    document.getElementById("reset").disabled = false;
   }
 
   function stopPi() {
     fetch("/reset-pi", { method:"POST" });
     isLive = false;
     liveFrame = null;
-    video.classList.add("hidden");
-    placeholder.classList.remove("hidden");
+    if (!capturedFrame) {
+      video.classList.add("hidden");
+      placeholder.classList.remove("hidden");
+    }
     label.innerText = "🛑 Feed stopped.";
     toggleButtons(true);
   }
 
   function captureFrame() {
-    fetch("/capture-frame", { method:"POST" }).then(()=>fetch("/reset-pi", { method:"POST" }));
+    fetch("/capture-frame", { method:"POST" }).then(() => {
+      fetch("/reset-pi", { method:"POST" });
+      isLive = false;
+      hasCapture = true;
+      video.src = capturedFrame;
+      video.classList.remove("hidden");
+      placeholder.classList.add("hidden");
+      label.innerText = "📸 Frame captured!";
+      document.getElementById("analyze").disabled = false;
+      document.getElementById("stop").disabled = true;
+      document.getElementById("start").disabled = false;
+      document.getElementById("reset").disabled = false;
+    });
   }
 
   function analyzeFrame() {
     if(!hasCapture) return alert("Capture a frame first!");
     showLoading();
     fetch("/analyze-frame", { method:"POST" });
+  }
+
+  function resetLiveDetection() {
+    liveFrame = null;
+    capturedFrame = null;
+    latestReport = null;
+    isLive = false;
+    hasCapture = false;
+
+    video.src = "";
+    video.classList.add("hidden");
+    placeholder.classList.remove("hidden");
+    label.innerText = "Camera feed not active.";
+
+    document.getElementById("start").disabled = false;
+    document.getElementById("stop").disabled = true;
+    document.getElementById("capture").disabled = true;
+    document.getElementById("analyze").disabled = true;
+    document.getElementById("reset").disabled = true;
   }
 
   function toggleButtons(enable) {
