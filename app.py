@@ -41,8 +41,7 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 client = MongoClient(
     MONGO_URI,
     tls=True,
-    tlsAllowInvalidCertificates=True,  # Change this to True
-    tlsInsecure=True  # Add this
+    tlsAllowInvalidCertificates=True
 )
 db = client.kgosibiodrone
 users_col = db.users
