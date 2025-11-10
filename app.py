@@ -39,15 +39,40 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 # ==============================
 # MongoDB setup (Render-friendly)
 # ==============================
-client = MongoClient(
-    MONGO_URI,
-    tls=True,                   # enforce TLS/SSL
-    tlsCAFile=certifi.where(),  # use proper CA bundle
-    serverSelectionTimeoutMS=10000  # 10s timeout
-)
-db = client.kgosibiodrone
-users_col = db.users
-results_col = db.results
+from pymongo import MongoClient, errors
+
+try:
+    mongo_uri = os.getenv("MONGO_URI")
+
+    # Ensure CA bundle and TLS verification
+    client = MongoClient(
+        mongo_uri,
+        tls=True,
+        tlsCAFile=certifi.where(),
+        serverSelectionTimeoutMS=10000  # 10s timeout
+    )
+
+    # Force a connection to test immediately
+    client.admin.command("ping")
+    print("✅ Successfully connected to MongoDB")
+
+    db = client.kgosibiodrone
+    users_col = db.users
+    results_col = db.results
+
+except errors.ServerSelectionTimeoutError as e:
+    print("❌ MongoDB connection failed: Server selection timeout.")
+    print(e)
+    raise
+except errors.ConnectionFailure as e:
+    print("❌ MongoDB connection failed: Connection failure.")
+    print(e)
+    raise
+except Exception as e:
+    print("❌ MongoDB connection error (unexpected):")
+    print(e)
+    raise
+
 
 # ==============================
 # Shared state
