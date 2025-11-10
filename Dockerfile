@@ -4,8 +4,9 @@
 
 FROM python:3.11-slim
 
-# Install CA certificates to fix MongoDB SSL error
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
+# ---- FIX SSL/TLS ----
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl gnupg && \
     update-ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
@@ -23,4 +24,5 @@ EXPOSE 8000
 ENV FLASK_ENV=production
 ENV PYTHONUNBUFFERED=1
 
+# ---- Run app ----
 CMD ["python", "-u", "app.py"]
