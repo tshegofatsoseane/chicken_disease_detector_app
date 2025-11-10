@@ -8,6 +8,7 @@ import os
 import base64
 from functools import wraps
 from dotenv import load_dotenv
+import certifi  # For proper SSL/TLS validation
 
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 from flask_socketio import SocketIO
@@ -36,12 +37,13 @@ app.secret_key = SECRET_KEY
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 # ==============================
-# MongoDB setup
+# MongoDB setup (Render-friendly)
 # ==============================
 client = MongoClient(
     MONGO_URI,
-    tls=True,                       # Required for Atlas
-    tlsAllowInvalidCertificates=False  # Change to True for testing only
+    tls=True,                   # enforce TLS/SSL
+    tlsCAFile=certifi.where(),  # use proper CA bundle
+    serverSelectionTimeoutMS=10000  # 10s timeout
 )
 db = client.kgosibiodrone
 users_col = db.users
@@ -73,7 +75,6 @@ def login_required(f):
 def index():
     return render_template("index.html")
 
-
 # --- Authentication ---
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -88,7 +89,6 @@ def login():
         return render_template("login.html", error="Invalid credentials")
 
     return render_template("login.html")
-
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -109,7 +109,6 @@ def register():
 
     return render_template("register.html")
 
-
 @app.route("/logout")
 def logout():
     session.clear()
@@ -127,13 +126,11 @@ def receive_frame():
     socketio.emit("new_frame", {"frame": latest_frame})
     return jsonify({"status": "ok"}), 200
 
-
 @app.route("/trigger-pi", methods=["POST"])
 def trigger_pi():
     pi_start_trigger["start"] = True
     print("🚀 Pi feed started")
     return jsonify({"status": "ok"}), 200
-
 
 @app.route("/reset-pi", methods=["POST"])
 def reset_pi():
@@ -142,11 +139,9 @@ def reset_pi():
     print("🛑 Pi feed stopped")
     return jsonify({"status": "ok"}), 200
 
-
 @app.route("/check-start", methods=["GET"])
 def check_start():
     return jsonify({"start": pi_start_trigger["start"]}), 200
-
 
 @app.route("/capture-frame", methods=["POST"])
 def capture_frame():
@@ -157,7 +152,6 @@ def capture_frame():
         print("📸 Frame captured")
         return jsonify({"status": "ok"}), 200
     return jsonify({"status": "error", "message": "No live frame"}), 400
-
 
 @app.route("/analyze-frame", methods=["POST"])
 def analyze_frame():
@@ -176,7 +170,6 @@ def analyze_frame():
 
     return jsonify({"status": "ok", "disease_id": disease_id, "confidence": confidence}), 200
 
-
 # --- Save analysis results ---
 @app.route("/save-result", methods=["POST"])
 @login_required
@@ -189,7 +182,6 @@ def save_result():
     results_col.insert_one(data)
     return jsonify({"status": "ok"}), 200
 
-
 @app.route("/get-history", methods=["GET"])
 @login_required
 def get_history():
@@ -198,7 +190,6 @@ def get_history():
     for r in results:
         r["_id"] = str(r["_id"])
     return jsonify(results)
-
 
 # ==============================
 # Run server
