@@ -18,11 +18,14 @@ CAMERA_INIT_RETRIES = 5 # attempts to initialize camera
 # Map TFLite model class indices to DISEASE_DATABASE IDs
 DISEASE_MAP = {
     0: 0,  # avian_influenza
-    1: 1,  # dead_chickens
-    2: 2,  # gumboro_disease
+    1: 7,  # dead_chickens
+    2: 5,  # gumboro_disease
     3: 3,  # infectious_coryza
-    4: 4,  # new_castles_disease
-    5: 5   # splay_foot
+    4: 2,  # new_castles_disease
+    5: 1,  # splay_foot
+    6: 4,  # healthy_chicken
+    7: 6,  # healthy
+    8: 8   # chicken_feeding
 }
 
 # ==== LOAD MODEL ====

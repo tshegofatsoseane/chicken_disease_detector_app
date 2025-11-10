@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  app:
+    build: .
+    container_name: chicken_disease_app
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - mongo
+    volumes:
+      - .:/app
+    command: python -u app.py
+
+  mongo:
+    image: mongo:7.0
+    container_name: chicken_disease_mongo
+    restart: always
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: kgosibiodrone
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: adminpassword
+    volumes:
+      - mongo_data:/data/db
+
+volumes:
+  mongo_data:

@@ -126,14 +126,72 @@
   const placeholder = document.getElementById("placeholder");
   const label = document.getElementById("label");
 
-  const DISEASES = {
-    0: { name: 'Avian Influenza', severity: 'critical', description: 'Highly contagious viral infection detected.',
-         nextSteps: ['IMMEDIATE QUARANTINE', 'Contact veterinarian urgently', 'Notify authorities', 'Test all birds'],
-         care: { immediate:'Isolate infected birds immediately.', daily:'Monitor all birds for symptoms.', weekly:'Continue health surveillance.', prevention:'Vaccinate and maintain strict biosecurity.'} },
-    1: { name: 'Gumboro Disease', severity: 'warning', description: 'Affects immune system, common in young chickens.',
-         nextSteps: ['Isolate affected birds', 'Contact vet'],
-         care: { immediate:'Provide clean environment.', daily:'Hydration and nutrition.', weekly:'Vaccination schedule check.', prevention:'Stress reduction and hygiene.'} }
-  };
+const DISEASES = {
+  0: { 
+    name: 'Avian Influenza', 
+    severity: 'critical', 
+    description: 'Highly contagious viral infection detected.', 
+    nextSteps: ['IMMEDIATE QUARANTINE', 'Contact veterinarian urgently', 'Notify authorities', 'Test all birds'], 
+    care: { immediate:'Isolate infected birds immediately.', daily:'Monitor all birds for symptoms.', weekly:'Continue health surveillance.', prevention:'Vaccinate and maintain strict biosecurity.'} 
+  },
+  1: { 
+    name: 'Splay Foot', 
+    severity: 'warning', 
+    description: 'A condition where chicks walk with legs spread outward.', 
+    nextSteps: ['Support chicks with proper bedding', 'Use leg braces if needed'], 
+    care: { immediate:'Provide soft bedding.', daily:'Check for proper leg alignment.', weekly:'Ensure proper nutrition and supplements.', prevention:'Ensure proper brooder conditions for chicks.'} 
+  },
+  2: { 
+    name: 'New Castle Disease', 
+    severity: 'critical', 
+    description: 'Highly contagious viral disease causing respiratory and neurological symptoms.', 
+    nextSteps: ['Isolate infected birds', 'Contact vet immediately', 'Vaccinate healthy birds'], 
+    care: { immediate:'Separate infected birds.', daily:'Supportive care.', weekly:'Monitor flock health.', prevention:'Maintain vaccination program.'} 
+  },
+  3: { 
+    name: 'Infectious Coryza', 
+    severity: 'warning', 
+    description: 'Bacterial infection affecting upper respiratory tract.', 
+    nextSteps: ['Isolate sick birds', 'Administer prescribed antibiotics'], 
+    care: { immediate:'Provide clean water and feed.', daily:'Monitor for sneezing or swelling.', weekly:'Sanitize housing.', prevention:'Vaccinate and maintain hygiene.'} 
+  },
+  4: { 
+    name: 'Healthy Chicken', 
+    severity: 'healthy', 
+    description: 'No disease detected. Chicken is in good health.', 
+    nextSteps: ['Continue routine care'], 
+    care: { immediate:'Maintain normal care.', daily:'Monitor flock.', weekly:'Check feed and water quality.', prevention:'Routine vaccination and hygiene.'} 
+  },
+  5: { 
+    name: 'Gumboro Disease', 
+    severity: 'warning', 
+    description: 'Affects immune system, common in young chickens.', 
+    nextSteps: ['Isolate affected birds', 'Contact vet'], 
+    care: { immediate:'Provide clean environment.', daily:'Hydration and nutrition.', weekly:'Vaccination schedule check.', prevention:'Stress reduction and hygiene.'} 
+  },
+  6: { 
+    name: 'Healthy', 
+    severity: 'healthy', 
+    description: 'No visible signs of illness.', 
+    nextSteps: ['Maintain regular care'], 
+    care: { immediate:'Feed and water as usual.', daily:'Monitor flock.', weekly:'Routine health checks.', prevention:'Maintain biosecurity measures.'} 
+  },
+  7: { 
+    name: 'Dead Chickens', 
+    severity: 'critical', 
+    description: 'Mortality detected in flock.', 
+    nextSteps: ['Identify cause of death', 'Remove carcasses immediately', 'Sanitize area', 'Contact veterinarian'], 
+    care: { immediate:'Remove dead birds.', daily:'Monitor flock closely.', weekly:'Investigate underlying causes.', prevention:'Vaccination and biosecurity.'} 
+  },
+  8: { 
+    name: 'Chicken Feeding', 
+    severity: 'info', 
+    description: 'Monitoring feeding activity and feed intake.', 
+    nextSteps: ['Ensure feed quality', 'Maintain feeding schedule'], 
+    care: { immediate:'Check feed supply.', daily:'Observe eating behavior.', weekly:'Adjust feed if necessary.', prevention:'Store feed properly to avoid contamination.'} 
+  }
+};
+
 
   // === LOAD HISTORY ===
   async function loadHistory() {
