@@ -1,3 +1,5 @@
+## app.py
+
 import eventlet
 eventlet.monkey_patch()  # Must be the first import for Eventlet
 
@@ -144,8 +146,8 @@ def get_user_subscription_status(username):
 # ==============================
 # Paystack helper functions
 # ==============================
-def initialize_paystack_payment(email, amount, metadata, reference=None):
-    """Initialize a Paystack payment."""
+def initialize_paystack_payment(email, amount, metadata, callback_url=None):
+    """Initialize a Paystack payment - Let Paystack generate the reference."""
     url = "https://api.paystack.co/transaction/initialize"
     headers = {
         "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
@@ -158,15 +160,27 @@ def initialize_paystack_payment(email, amount, metadata, reference=None):
         "metadata": metadata
     }
     
-    if reference:
-        payload["reference"] = reference
+    # Add callback URL if provided
+    if callback_url:
+        payload["callback_url"] = callback_url
     
     try:
-        print(f"🔍 Paystack Request - Email: {email}, Amount: {amount} ({PAYSTACK_CURRENCY})")
+        print(f"🔍 Paystack Request - Email: {email}, Amount: {amount} ({PAYSTACK_CURRENCY}) [AUTO-REFERENCE]")
+        if callback_url:
+            print(f"🔗 Callback URL: {callback_url}")
         response = requests.post(url, json=payload, headers=headers)
         print(f"📊 Paystack Response Status: {response.status_code}")
-        response.raise_for_status()
-        return response.json()
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('status') and data.get('data'):
+                assigned_ref = data['data'].get('reference', 'N/A')
+                print(f"✅ Paystack assigned reference: {assigned_ref}")
+            return data
+        else:
+            print(f"⚠️ Paystack error response: {response.text}")
+            response.raise_for_status()
+            
     except requests.exceptions.RequestException as e:
         print(f"⚠️ Paystack initialization error: {e}")
         if hasattr(e, 'response') and hasattr(e.response, 'text'):
@@ -305,6 +319,15 @@ def initialize_subscription():
                 "message": "User email not set. Please update your profile."
             }), 400
         
+        # Clean up old pending subscription transactions (older than 10 minutes)
+        ten_min_ago = datetime.utcnow() - timedelta(minutes=10)
+        transactions_col.delete_many({
+            "email": email,
+            "type": "subscription",
+            "status": "pending",
+            "timestamp": {"$lt": ten_min_ago}
+        })
+        
         amount_cents = int(SUBSCRIPTION_COST_ZAR * 100)
         
         metadata = {
@@ -317,17 +340,22 @@ def initialize_subscription():
         
         print(f"💎 Initializing subscription - Email: {email}, Amount: R{SUBSCRIPTION_COST_ZAR}.00")
         
-        unique_ref = f"sub{int(time.time() * 1000)}"
-        response = initialize_paystack_payment(email, amount_cents, metadata, reference=unique_ref)
+        # Generate callback URL for Paystack to redirect back
+        callback_url = request.url_root.rstrip('/') + '/'
+        
+        # Let Paystack auto-generate the reference
+        response = initialize_paystack_payment(email, amount_cents, metadata, callback_url)
         
         if not response:
             return jsonify({"status": "error", "message": "Payment service unavailable"}), 500
         
         if response.get("status"):
+            paystack_reference = response["data"]["reference"]
+            
             transaction_data = {
                 "username": username,
                 "email": email,
-                "reference": response["data"]["reference"],
+                "reference": paystack_reference,
                 "amount_zar": SUBSCRIPTION_COST_ZAR,
                 "amount_cents": amount_cents,
                 "type": "subscription",
@@ -337,12 +365,13 @@ def initialize_subscription():
             }
             transactions_col.insert_one(transaction_data)
             
-            print(f"✅ Subscription payment initialized - Reference: {response['data']['reference']}")
+            print(f"✅ Subscription payment initialized - Reference: {paystack_reference}")
+            
+            # Return the payment URL for frontend to redirect
             return jsonify({
                 "status": "ok",
-                "authorization_url": response["data"]["authorization_url"],
-                "access_code": response["data"]["access_code"],
-                "reference": response["data"]["reference"]
+                "payment_url": response["data"]["authorization_url"],
+                "reference": paystack_reference
             }), 200
         else:
             error_msg = response.get("message", "Unknown error")
@@ -364,12 +393,18 @@ def verify_subscription():
         reference = data.get("reference")
         username = session["user"]
         
+        print(f"🔍 Verifying subscription - Username: {username}, Reference: {reference}")
+        
         if not reference:
+            print("⚠️ No reference provided")
             return jsonify({"status": "error", "message": "No reference provided"}), 400
         
         response = verify_paystack_payment(reference)
+        print(f"📊 Paystack verification response: {response}")
         
         if response and response.get("status") and response["data"]["status"] == "success":
+            print(f"✅ Payment verified successfully")
+            
             # Update transaction status
             transactions_col.update_one(
                 {"reference": reference},
@@ -402,13 +437,19 @@ def verify_subscription():
                 "message": "Subscription activated successfully",
                 "end_date": end_date.isoformat()
             }), 200
-        
-        return jsonify({
-            "status": "error",
-            "message": "Payment verification failed"
-        }), 400
+        else:
+            error_msg = "Payment not successful"
+            if response:
+                error_msg = response.get("message", error_msg)
+                print(f"⚠️ Paystack verification failed: {error_msg}")
+            return jsonify({
+                "status": "error",
+                "message": error_msg
+            }), 400
     except Exception as e:
         print(f"⚠️ Error verifying subscription: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -577,6 +618,14 @@ def initialize_payment():
         if not email or "@" not in email:
             return jsonify({"status": "error", "message": "User email not set. Please update your profile."}), 400
         
+        # Clean up old pending transactions (older than 10 minutes)
+        ten_min_ago = datetime.utcnow() - timedelta(minutes=10)
+        transactions_col.delete_many({
+            "email": email,
+            "status": "pending",
+            "timestamp": {"$lt": ten_min_ago}
+        })
+        
         metadata = {
             "username": username,
             "disease": disease_name,
@@ -587,17 +636,22 @@ def initialize_payment():
         
         print(f"💳 Initializing payment - Email: {email}, Amount: R{amount_zar}.00 ({amount_cents} cents)")
         
-        unique_ref = f"bd{int(time.time() * 1000)}"
-        response = initialize_paystack_payment(email, amount_cents, metadata, reference=unique_ref)
+        # Generate callback URL for Paystack to redirect back
+        callback_url = request.url_root.rstrip('/') + '/'
+        
+        # Let Paystack auto-generate the reference
+        response = initialize_paystack_payment(email, amount_cents, metadata, callback_url)
         
         if not response:
             return jsonify({"status": "error", "message": "Payment service unavailable"}), 500
         
         if response.get("status"):
+            paystack_reference = response["data"]["reference"]
+            
             transaction_data = {
                 "username": username,
                 "email": email,
-                "reference": response["data"]["reference"],
+                "reference": paystack_reference,
                 "amount_zar": amount_zar,
                 "amount_cents": amount_cents,
                 "disease": disease_name,
@@ -607,12 +661,13 @@ def initialize_payment():
                 "timestamp": datetime.utcnow()
             }
             transactions_col.insert_one(transaction_data)
-            print(f"✅ Payment initialized - Reference: {response['data']['reference']}")
+            print(f"✅ Payment initialized - Reference: {paystack_reference}")
+            
+            # Return the payment URL for frontend to redirect
             return jsonify({
                 "status": "ok",
-                "authorization_url": response["data"]["authorization_url"],
-                "access_code": response["data"]["access_code"],
-                "reference": response["data"]["reference"]
+                "payment_url": response["data"]["authorization_url"],
+                "reference": paystack_reference
             }), 200
         else:
             error_msg = response.get("message", "Unknown error")
@@ -737,6 +792,7 @@ if __name__ == "__main__":
     print(f"💳 Payment Configuration:")
     print(f"   - Download: R{DOWNLOAD_COST_ZAR}.00 ZAR per PDF")
     print(f"   - Subscription: R{SUBSCRIPTION_COST_ZAR}.00 ZAR per month")
+    print(f"   - References: AUTO-GENERATED by Paystack")
     try:
         socketio.run(app, host="0.0.0.0", port=port, debug=False)
     except KeyboardInterrupt:

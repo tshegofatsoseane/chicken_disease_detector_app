@@ -1,3 +1,4 @@
+<!-- index.html-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,7 +8,6 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://js.paystack.co/v1/inline.js"></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
   <style>
     .loader {
@@ -453,7 +453,7 @@
       const initData = await initRes.json();
       console.log("Subscription init response:", initData);
       
-      if (!initData.reference) {
+      if (initData.status !== "ok" || !initData.payment_url) {
         alert("❌ Failed to initialize subscription: " + (initData.message || "Unknown error"));
         paymentInProgress = false;
         payBtn.disabled = false;
@@ -461,24 +461,12 @@
         return;
       }
 
-      const handler = PaystackPop.setup({
-        key: PAYSTACK_PUBLIC_KEY,
-        email: `test+${Date.now()}@biodrone.test`,
-        amount: SUBSCRIPTION_COST_ZAR * 100,
-        ref: initData.reference,
-        currency: "ZAR",
-        onClose: function() {
-          console.log('Subscription modal closed');
-          paymentInProgress = false;
-          payBtn.disabled = false;
-          payBtn.textContent = "🔒 Subscribe Now";
-        },
-        onSuccess: function(response) {
-          console.log('Subscription payment successful:', response);
-          verifySubscription(response.reference);
-        }
-      });
-      handler.openIframe();
+      // Store reference for verification after redirect back
+      localStorage.setItem('pending_subscription_ref', initData.reference);
+      
+      // Redirect to Paystack payment page
+      window.location.href = initData.payment_url;
+      
     } catch (e) {
       console.error("Subscription error:", e);
       alert("❌ Subscription error: " + e.message);
@@ -510,8 +498,6 @@
       alert("Verification error: " + e.message);
     } finally {
       paymentInProgress = false;
-      document.getElementById("subscribe-pay-btn").disabled = false;
-      document.getElementById("subscribe-pay-btn").textContent = "🔒 Subscribe Now";
     }
   }
 
@@ -770,7 +756,7 @@
         return;
       }
       
-      if (!initData.reference) {
+      if (initData.status !== "ok" || !initData.payment_url) {
         alert("❌ Failed to initialize payment: " + (initData.message || "Unknown error"));
         paymentInProgress = false;
         payBtn.disabled = false;
@@ -778,24 +764,13 @@
         return;
       }
 
-      const handler = PaystackPop.setup({
-        key: PAYSTACK_PUBLIC_KEY,
-        email: `test+${Date.now()}@biodrone.test`,
-        amount: DOWNLOAD_COST_ZAR * 100,
-        ref: initData.reference,
-        currency: "ZAR",
-        onClose: function() {
-          console.log('Payment modal closed');
-          paymentInProgress = false;
-          payBtn.disabled = false;
-          payBtn.textContent = "🔒 Pay with Paystack";
-        },
-        onSuccess: function(response) {
-          console.log('Payment successful:', response);
-          verifyPayment(response.reference);
-        }
-      });
-      handler.openIframe();
+      // Store reference and report data for after redirect
+      localStorage.setItem('pending_payment_ref', initData.reference);
+      localStorage.setItem('pending_report', JSON.stringify(latestReport));
+      
+      // Redirect to Paystack payment page
+      window.location.href = initData.payment_url;
+      
     } catch (e) {
       console.error("Payment error:", e);
       alert("❌ Payment error: " + e.message);
@@ -815,9 +790,18 @@
 
       const verifyData = await verifyRes.json();
       if (verifyData.status === "ok" && verifyData.can_download) {
+        // Restore the report from localStorage
+        const savedReport = localStorage.getItem('pending_report');
+        if (savedReport) {
+          latestReport = JSON.parse(savedReport);
+        }
+        
         alert("✅ Payment successful! Downloading your report...");
-        closePaymentModal();
         downloadPDF();
+        
+        // Clean up localStorage
+        localStorage.removeItem('pending_payment_ref');
+        localStorage.removeItem('pending_report');
       } else {
         alert("❌ Payment verification failed");
       }
@@ -826,8 +810,6 @@
       alert("Verification error: " + e.message);
     } finally {
       paymentInProgress = false;
-      document.getElementById("pay-btn").disabled = false;
-      document.getElementById("pay-btn").textContent = "🔒 Pay with Paystack";
     }
   }
 
@@ -983,9 +965,51 @@
     }
   }
 
+  // Check if returning from Paystack payment
+  async function checkPaymentCallback() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const reference = urlParams.get('reference');
+    const trxref = urlParams.get('trxref');
+    const status = urlParams.get('status');
+    
+    const paymentRef = reference || trxref;
+    
+    if (paymentRef) {
+      console.log('Payment callback detected:', paymentRef, 'Status:', status);
+      
+      // Show loading message
+      showLoading();
+      
+      // Check if it's a subscription
+      const pendingSubRef = localStorage.getItem('pending_subscription_ref');
+      
+      try {
+        if (pendingSubRef === paymentRef) {
+          console.log('Verifying subscription...');
+          // Verify subscription
+          await verifySubscription(paymentRef);
+          localStorage.removeItem('pending_subscription_ref');
+        } else {
+          console.log('Verifying download payment...');
+          // Verify regular payment
+          await verifyPayment(paymentRef);
+        }
+      } catch (error) {
+        console.error('Payment verification error:', error);
+        alert('Error verifying payment. Please contact support with reference: ' + paymentRef);
+      } finally {
+        closeLoading();
+      }
+      
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', async () => {
     await initializePaymentConfig();
     await loadSubscriptionStatus();
+    await checkPaymentCallback();
     loadHistory();
     console.log("🚀 BioDrone interface loaded");
   });
