@@ -66,7 +66,9 @@ subscriptions_col = db.subscriptions
 # Shared state
 # ==============================
 latest_frame = None
+latest_prediction = None
 captured_frame = None
+captured_prediction = None
 pi_start_trigger = {"start": False}
 
 # ==============================
@@ -74,12 +76,14 @@ pi_start_trigger = {"start": False}
 # ==============================
 def cleanup_resources():
     """Clean up resources on shutdown."""
-    global latest_frame, captured_frame, pi_start_trigger
+    global latest_frame, latest_prediction, captured_frame, captured_prediction, pi_start_trigger
     try:
         print("🛑 Backend shutting down - cleaning up resources...")
         pi_start_trigger["start"] = False
         latest_frame = None
+        latest_prediction = None
         captured_frame = None
+        captured_prediction = None
         if client:
             client.close()
             print("✓ MongoDB connection closed")
@@ -560,8 +564,8 @@ def verify_subscription():
 # --- Pi Endpoints ---
 @app.route("/api/frame", methods=["POST"])
 def receive_frame():
-    """Receive frame from Pi client and broadcast to connected clients."""
-    global latest_frame
+    """Receive frame + ML prediction from Pi client and broadcast to connected clients."""
+    global latest_frame, latest_prediction
     try:
         image_file = request.files.get("image")
         if not image_file:
@@ -570,12 +574,19 @@ def receive_frame():
         disease_id = request.form.get("disease_id")
         confidence = request.form.get("confidence")
 
+        # Store frame and Pi's prediction
         latest_frame = base64.b64encode(image_file.read()).decode("utf-8")
+        latest_prediction = {
+            "disease_id": int(disease_id) if disease_id else 0,
+            "confidence": float(confidence) if confidence else 0.0
+        }
+        
+        print(f"🎯 Frame received from Pi - Disease ID: {latest_prediction['disease_id']}, Confidence: {latest_prediction['confidence']:.2f}")
         
         socketio.emit("new_frame", {
             "frame": latest_frame,
-            "disease_id": disease_id,
-            "confidence": confidence
+            "disease_id": latest_prediction["disease_id"],
+            "confidence": latest_prediction["confidence"]
         })
         
         return jsonify({"status": "ok"}), 200
@@ -622,15 +633,23 @@ def check_start():
 
 @app.route("/capture-frame", methods=["POST"])
 def capture_frame():
-    """Capture the current live frame for analysis."""
-    global captured_frame, latest_frame
+    """Capture the current live frame + prediction for analysis."""
+    global captured_frame, captured_prediction, latest_frame, latest_prediction
     try:
-        if latest_frame:
+        if latest_frame and latest_prediction:
             captured_frame = latest_frame
-            socketio.emit("frame_captured", {"frame": captured_frame})
-            print("📸 Frame captured")
+            captured_prediction = latest_prediction.copy()
+            
+            socketio.emit("frame_captured", {
+                "frame": captured_frame,
+                "disease_id": captured_prediction["disease_id"],
+                "confidence": captured_prediction["confidence"]
+            })
+            
+            print(f"📸 Frame captured - Disease ID: {captured_prediction['disease_id']}, Confidence: {captured_prediction['confidence']:.2f}")
             return jsonify({"status": "ok"}), 200
-        return jsonify({"status": "error", "message": "No live frame"}), 400
+        
+        return jsonify({"status": "error", "message": "No live frame available"}), 400
     except Exception as e:
         print(f"⚠️ Error capturing frame: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -639,8 +658,8 @@ def capture_frame():
 @app.route("/analyze-frame", methods=["POST"])
 @login_required
 def analyze_frame():
-    """Analyze the captured frame with ML model."""
-    global captured_frame
+    """Analyze the captured frame using Pi's ML prediction."""
+    global captured_frame, captured_prediction
     try:
         username = session["user"]
         is_premium = check_user_subscription(username)
@@ -668,19 +687,14 @@ def analyze_frame():
                     "limit_reached": True
                 }), 429
         
-        if not captured_frame:
-            return jsonify({"status": "error", "message": "No captured frame"}), 400
+        if not captured_frame or not captured_prediction:
+            return jsonify({"status": "error", "message": "No captured frame or prediction available"}), 400
 
-        # TODO: Integrate your TFLite ML model here
-        # For now, returning placeholder values
-        # Steps:
-        # 1. Decode captured_frame from base64
-        # 2. Preprocess image (resize, normalize)
-        # 3. Run inference with your model
-        # 4. Get disease_id and confidence
+        # Use Pi's ML prediction
+        disease_id = captured_prediction["disease_id"]
+        confidence = captured_prediction["confidence"]
         
-        disease_id = 0
-        confidence = 0.95
+        print(f"🔍 Analyzing frame - Using Pi prediction: Disease ID {disease_id}, Confidence {confidence:.2f}")
         
         # Save result with timestamp
         result_data = {
@@ -692,7 +706,7 @@ def analyze_frame():
         }
         results_col.insert_one(result_data)
         
-        print(f"🔍 Frame analyzed - Disease ID: {disease_id}, Confidence: {confidence}")
+        print(f"✅ Result saved - Disease ID: {disease_id}, Confidence: {confidence:.2f}")
         
         socketio.emit("frame_analyzed", {
             "disease_id": disease_id,
@@ -706,6 +720,8 @@ def analyze_frame():
         }), 200
     except Exception as e:
         print(f"⚠️ Error analyzing frame: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -843,7 +859,9 @@ def initialize_payment():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-
+@app.route("/api/verify-payment", methods=["POST"])
+@login_required
+def verify_payment():
     """Verify Paystack payment and allow PDF download."""
     try:
         data = request.json

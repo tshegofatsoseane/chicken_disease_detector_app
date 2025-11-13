@@ -1,4 +1,4 @@
-//app.js - Updated with proper backend-driven payment flow
+//app.js 
 
 const socket = io({ transports: ["websocket"] });
 
