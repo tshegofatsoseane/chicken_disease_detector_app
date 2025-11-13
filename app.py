@@ -1,3 +1,5 @@
+## app.py
+
 import eventlet
 eventlet.monkey_patch()  # Must be the first import for Eventlet
 
@@ -1020,6 +1022,345 @@ def health_check():
         print(f"⚠️ Health check failed: {e}")
         return jsonify({"status": "unhealthy", "error": str(e)}), 500
 
+# ==============================
+# Statistics & Monitoring Endpoints
+# ==============================
+
+@app.route("/api/session-stats", methods=["GET"])
+@login_required
+def session_stats():
+    """Get real-time session statistics for current user."""
+    try:
+        username = session["user"]
+        start, end = get_today_start_end()
+        
+        # Count total detections today
+        total_detections = results_col.count_documents({
+            "username": username,
+            "created_at": {"$gte": start, "$lte": end}
+        })
+        
+        # Get all results for today to calculate stats
+        results_today = list(results_col.find({
+            "username": username,
+            "created_at": {"$gte": start, "$lte": end}
+        }).sort("created_at", -1))
+        
+        # Calculate average confidence
+        avg_confidence = 0
+        if results_today:
+            confidences = [r.get("confidence", 0) for r in results_today]
+            avg_confidence = sum(confidences) / len(confidences) if confidences else 0
+        
+        # Count alerts (critical issues - high confidence predictions for severe diseases)
+        alerts = sum(1 for r in results_today if r.get("confidence", 0) > 0.8 and r.get("disease_id", 0) in [0, 3, 4])
+        
+        # Categorize health status based on disease severity
+        # 0=Coccidiosis, 1=Healthy, 2=Newcastle, 3=Salmonella, 4=Fowl Pox, 5=Aspergillosis, 6=Infectious Bursal, 7=Gumboro, 8=Marek's
+        SEVERE_DISEASES = {0, 2, 3, 4, 8}  # Critical conditions
+        WARNING_DISEASES = {5, 6, 7}  # Warning conditions
+        HEALTHY_DISEASES = {1}  # Healthy
+        
+        healthy_count = sum(1 for r in results_today if r.get("disease_id", 1) in HEALTHY_DISEASES)
+        warning_count = sum(1 for r in results_today if r.get("disease_id") in WARNING_DISEASES)
+        critical_count = sum(1 for r in results_today if r.get("disease_id") in SEVERE_DISEASES)
+        
+        # Calculate analysis rate (% of frames that resulted in analysis)
+        # This is based on total results vs potential frames
+        analysis_rate = (total_detections / max(1, len(results_today))) * 100 if results_today else 0
+        
+        stats = {
+            "detections": total_detections,
+            "avg_confidence": round(avg_confidence * 100, 1),  # Convert to percentage
+            "alerts": alerts,
+            "healthy_birds": healthy_count,
+            "warnings": warning_count,
+            "critical_issues": critical_count,
+            "analysis_rate": round(analysis_rate, 1)
+        }
+        
+        print(f"📊 Session stats for {username}: {stats}")
+        return jsonify(stats), 200
+        
+    except Exception as e:
+        print(f"⚠️ Error getting session stats: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "detections": 0,
+            "avg_confidence": 0,
+            "alerts": 0,
+            "healthy_birds": 0,
+            "warnings": 0,
+            "critical_issues": 0,
+            "analysis_rate": 0
+        }), 500
+
+
+@app.route("/api/disease-summary", methods=["GET"])
+@login_required
+def disease_summary():
+    """Get summary of all diseases detected today."""
+    try:
+        username = session["user"]
+        start, end = get_today_start_end()
+        
+        # Disease mapping
+        DISEASE_NAMES = {
+            0: "Coccidiosis",
+            1: "Healthy",
+            2: "Newcastle Disease",
+            3: "Salmonella",
+            4: "Fowl Pox",
+            5: "Aspergillosis",
+            6: "Infectious Bursal",
+            7: "Gumboro",
+            8: "Marek's Disease"
+        }
+        
+        results_today = results_col.find({
+            "username": username,
+            "created_at": {"$gte": start, "$lte": end}
+        })
+        
+        disease_counts = {}
+        for result in results_today:
+            disease_id = result.get("disease_id", 1)
+            disease_counts[disease_id] = disease_counts.get(disease_id, 0) + 1
+        
+        # Format response
+        disease_summary = [
+            {
+                "disease_id": disease_id,
+                "name": DISEASE_NAMES.get(disease_id, "Unknown"),
+                "count": count
+            }
+            for disease_id, count in sorted(disease_counts.items())
+        ]
+        
+        print(f"🦠 Disease summary for {username}: {disease_summary}")
+        return jsonify(disease_summary), 200
+        
+    except Exception as e:
+        print(f"⚠️ Error getting disease summary: {e}")
+        return jsonify([]), 500
+
+
+@app.route("/api/session-duration", methods=["GET"])
+@login_required
+def session_duration():
+    """Get current session duration based on active detection period."""
+    try:
+        username = session["user"]
+        start, end = get_today_start_end()
+        
+        # Get first and last detection times today
+        first_result = results_col.find_one(
+            {"username": username, "created_at": {"$gte": start, "$lte": end}},
+            sort=[("created_at", 1)]
+        )
+        last_result = results_col.find_one(
+            {"username": username, "created_at": {"$gte": start, "$lte": end}},
+            sort=[("created_at", -1)]
+        )
+        
+        if first_result and last_result:
+            duration = last_result["created_at"] - first_result["created_at"]
+            minutes = duration.total_seconds() / 60
+            seconds = int(duration.total_seconds() % 60)
+            hours = int(minutes // 60)
+            minutes = int(minutes % 60)
+            
+            duration_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}" if hours > 0 else f"{minutes:02d}:{seconds:02d}"
+            return jsonify({"duration": duration_str, "seconds": duration.total_seconds()}), 200
+        
+        return jsonify({"duration": "00:00", "seconds": 0}), 200
+        
+    except Exception as e:
+        print(f"⚠️ Error getting session duration: {e}")
+        return jsonify({"duration": "00:00", "seconds": 0}), 500
+
+
+@app.route("/api/detailed-results", methods=["GET"])
+@login_required
+def detailed_results():
+    """Get detailed results with health classification."""
+    try:
+        username = session["user"]
+        start, end = get_today_start_end()
+        limit = request.args.get("limit", 50, type=int)
+        
+        DISEASE_NAMES = {
+            0: "Coccidiosis",
+            1: "Healthy",
+            2: "Newcastle Disease",
+            3: "Salmonella",
+            4: "Fowl Pox",
+            5: "Aspergillosis",
+            6: "Infectious Bursal",
+            7: "Gumboro",
+            8: "Marek's Disease"
+        }
+        
+        SEVERITY = {
+            0: "critical", 1: "healthy", 2: "critical", 3: "critical",
+            4: "critical", 5: "warning", 6: "warning", 7: "warning", 8: "critical"
+        }
+        
+        results = list(results_col.find(
+            {"username": username, "created_at": {"$gte": start, "$lte": end}}
+        ).sort("created_at", -1).limit(limit))
+        
+        detailed = []
+        for r in results:
+            disease_id = r.get("disease_id", 1)
+            detailed.append({
+                "id": str(r["_id"]),
+                "disease_id": disease_id,
+                "disease_name": DISEASE_NAMES.get(disease_id, "Unknown"),
+                "confidence": round(r.get("confidence", 0) * 100, 1),
+                "severity": SEVERITY.get(disease_id, "unknown"),
+                "timestamp": r.get("created_at").isoformat(),
+                "frame": r.get("frame", "")[:50] + "..." if r.get("frame") else ""  # Truncate for size
+            })
+        
+        return jsonify(detailed), 200
+        
+    except Exception as e:
+        print(f"⚠️ Error getting detailed results: {e}")
+        return jsonify([]), 500
+
+
+@app.route("/api/alerts-today", methods=["GET"])
+@login_required
+def alerts_today():
+    """Get all high-confidence detections (alerts) for today."""
+    try:
+        username = session["user"]
+        start, end = get_today_start_end()
+        confidence_threshold = request.args.get("threshold", 0.75, type=float)
+        
+        DISEASE_NAMES = {
+            0: "Coccidiosis", 1: "Healthy", 2: "Newcastle Disease",
+            3: "Salmonella", 4: "Fowl Pox", 5: "Aspergillosis",
+            6: "Infectious Bursal", 7: "Gumboro", 8: "Marek's Disease"
+        }
+        
+        # Get high-confidence results
+        alerts = list(results_col.find({
+            "username": username,
+            "created_at": {"$gte": start, "$lte": end},
+            "confidence": {"$gte": confidence_threshold}
+        }).sort("created_at", -1))
+        
+        formatted_alerts = []
+        for alert in alerts:
+            formatted_alerts.append({
+                "disease": DISEASE_NAMES.get(alert.get("disease_id", 1), "Unknown"),
+                "confidence": round(alert.get("confidence", 0) * 100, 1),
+                "timestamp": alert.get("created_at").isoformat(),
+                "severity": "high" if alert.get("confidence", 0) > 0.85 else "medium"
+            })
+        
+        print(f"🚨 {len(formatted_alerts)} alerts for {username} (threshold: {confidence_threshold})")
+        return jsonify(formatted_alerts), 200
+        
+    except Exception as e:
+        print(f"⚠️ Error getting alerts: {e}")
+        return jsonify([]), 500
+
+
+@app.route("/api/dashboard-overview", methods=["GET"])
+@login_required
+def dashboard_overview():
+    """Get complete dashboard overview in one call."""
+    try:
+        username = session["user"]
+        start, end = get_today_start_end()
+        
+        DISEASE_NAMES = {
+            0: "Coccidiosis", 1: "Healthy", 2: "Newcastle Disease",
+            3: "Salmonella", 4: "Fowl Pox", 5: "Aspergillosis",
+            6: "Infectious Bursal", 7: "Gumboro", 8: "Marek's Disease"
+        }
+        
+        SEVERE_DISEASES = {0, 2, 3, 4, 8}
+        WARNING_DISEASES = {5, 6, 7}
+        HEALTHY_DISEASES = {1}
+        
+        # Get all results for today
+        results_today = list(results_col.find({
+            "username": username,
+            "created_at": {"$gte": start, "$lte": end}
+        }).sort("created_at", -1))
+        
+        # Calculate stats
+        total_detections = len(results_today)
+        avg_confidence = sum(r.get("confidence", 0) for r in results_today) / max(1, total_detections)
+        
+        healthy_count = sum(1 for r in results_today if r.get("disease_id", 1) in HEALTHY_DISEASES)
+        warning_count = sum(1 for r in results_today if r.get("disease_id") in WARNING_DISEASES)
+        critical_count = sum(1 for r in results_today if r.get("disease_id") in SEVERE_DISEASES)
+        alerts = sum(1 for r in results_today if r.get("confidence", 0) > 0.8 and r.get("disease_id", 0) in SEVERE_DISEASES)
+        
+        # Disease breakdown
+        disease_counts = {}
+        for r in results_today:
+            did = r.get("disease_id", 1)
+            disease_counts[did] = disease_counts.get(did, 0) + 1
+        
+        session_duration_obj = (results_today[-1]["created_at"] - results_today[0]["created_at"]) if len(results_today) > 1 else None
+        duration_str = "00:00"
+        if session_duration_obj:
+            minutes = int(session_duration_obj.total_seconds() / 60)
+            seconds = int(session_duration_obj.total_seconds() % 60)
+            duration_str = f"{minutes:02d}:{seconds:02d}"
+        
+        overview = {
+            "summary": {
+                "detections": total_detections,
+                "avg_confidence": round(avg_confidence * 100, 1),
+                "session_duration": duration_str,
+                "alerts": alerts,
+                "healthy_birds": healthy_count,
+                "warnings": warning_count,
+                "critical_issues": critical_count,
+                "analysis_rate": round((total_detections / max(1, total_detections)) * 100, 1)
+            },
+            "disease_breakdown": [
+                {"disease_id": did, "name": DISEASE_NAMES.get(did, "Unknown"), "count": count}
+                for did, count in sorted(disease_counts.items())
+            ],
+            "recent_detections": [
+                {
+                    "disease": DISEASE_NAMES.get(r.get("disease_id", 1), "Unknown"),
+                    "confidence": round(r.get("confidence", 0) * 100, 1),
+                    "timestamp": r.get("created_at").isoformat()
+                }
+                for r in results_today[:10]
+            ]
+        }
+        
+        return jsonify(overview), 200
+        
+    except Exception as e:
+        print(f"⚠️ Error getting dashboard overview: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "summary": {
+                "detections": 0,
+                "avg_confidence": 0,
+                "session_duration": "00:00",
+                "alerts": 0,
+                "healthy_birds": 0,
+                "warnings": 0,
+                "critical_issues": 0,
+                "analysis_rate": 0
+            },
+            "disease_breakdown": [],
+            "recent_detections": []
+        }), 500
 
 @app.errorhandler(404)
 def not_found(error):

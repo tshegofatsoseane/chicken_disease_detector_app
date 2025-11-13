@@ -692,6 +692,148 @@ async function checkPaymentCallback() {
   }
 }
 
+
+
+let currentDetectionMode = 'live';
+let uploadedImageData = null;
+
+function switchMode(mode) {
+  currentDetectionMode = mode;
+  
+  // Update toggle buttons
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.classList.remove('active');
+  });
+  document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
+  
+  // Update sections
+  document.querySelectorAll('.detection-section').forEach(section => {
+    section.classList.remove('active');
+  });
+  
+  if (mode === 'live') {
+    document.getElementById('live-detection').classList.add('active');
+    // Stop any ongoing uploads
+    if (isLive) {
+      stopPi();
+    }
+  } else {
+    document.getElementById('upload-detection').classList.add('active');
+    // Stop live feed when switching to upload
+    if (isLive) {
+      stopPi();
+    }
+    resetLiveDetection();
+  }
+}
+
+function handleImageUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  // Validate file size (max 10MB)
+  if (file.size > 10 * 1024 * 1024) {
+    alert('❌ File size exceeds 10MB limit');
+    return;
+  }
+  
+  // Validate file type
+  if (!['image/png', 'image/jpeg', 'image/jpg'].includes(file.type)) {
+    alert('❌ Only PNG and JPG files are supported');
+    return;
+  }
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    uploadedImageData = e.target.result;
+    const preview = document.getElementById('uploaded-preview');
+    const uploadArea = document.getElementById('upload-area');
+    
+    preview.src = uploadedImageData;
+    preview.classList.remove('hidden');
+    uploadArea.classList.add('hidden');
+    
+    // Enable analyze button
+    document.getElementById('analyze-upload').disabled = false;
+    document.getElementById('clear-upload').disabled = false;
+    
+    console.log('✅ Image uploaded successfully');
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearUploadedImage() {
+  uploadedImageData = null;
+  document.getElementById('upload-input').value = '';
+  document.getElementById('uploaded-preview').classList.add('hidden');
+  document.getElementById('upload-area').classList.remove('hidden');
+  document.getElementById('analyze-upload').disabled = true;
+  document.getElementById('clear-upload').disabled = true;
+}
+
+function analyzeUploadedImage() {
+  if (!uploadedImageData) {
+    alert('❌ Please upload an image first');
+    return;
+  }
+  
+  if (!IS_PREMIUM && USAGE_STATS.scans_remaining !== null && USAGE_STATS.scans_remaining <= 0) {
+    if (confirm('You\'ve reached your free scan limit (5/day). Upgrade to Premium for unlimited scans?')) {
+      openSubscriptionModal();
+    }
+    return;
+  }
+  
+  showLoading();
+  
+  // Simulate analysis (in production, send to backend)
+  setTimeout(() => {
+    // Extract base64 data
+    const base64Data = uploadedImageData.split(',')[1];
+    
+    // Mock disease detection - replace with actual backend call
+    const mockDiseaseId = Math.floor(Math.random() * 9);
+    const mockConfidence = 0.85 + Math.random() * 0.15;
+    
+    capturedFrame = uploadedImageData;
+    latestReport = {
+      disease: DISEASES[mockDiseaseId] || DISEASES[4],
+      confidence: mockConfidence,
+      image: uploadedImageData
+    };
+    
+    closeLoading();
+    const disease = latestReport.disease;
+    showReport(disease, mockConfidence);
+    
+    console.log(`✅ Uploaded image analyzed - Disease: ${disease.name}, Confidence: ${(mockConfidence*100).toFixed(1)}%`);
+  }, 2000);
+}
+
+// Setup drag and drop
+const uploadArea = document.getElementById('upload-area');
+if (uploadArea) {
+  uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadArea.classList.add('dragover');
+  });
+  
+  uploadArea.addEventListener('dragleave', () => {
+    uploadArea.classList.remove('dragover');
+  });
+  
+  uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      document.getElementById('upload-input').files = files;
+      handleImageUpload({ target: { files } });
+    }
+  });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   await initializePaymentConfig();
   await loadSubscriptionStatus();

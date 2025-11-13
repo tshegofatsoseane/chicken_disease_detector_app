@@ -9,8 +9,8 @@ import signal
 import sys
 
 # ==== CONFIG ====
-BACKEND_URL = "https://chicken-disease-detector-app-1.onrender.com/api/frame"
-CHECK_START_URL = "https://chicken-disease-detector-app-1.onrender.com/check-start"
+BACKEND_URL = "http://192.168.100.74:8000/api/frame"
+CHECK_START_URL = "http://192.168.100.74:8000/check-start"
 MODEL_PATH = "chicken_disease_classifier_vgg16.tflite"
 CAPTURE_INTERVAL = 0.3
 NETWORK_RETRY = 5
@@ -28,7 +28,7 @@ interpreter.allocate_tensors()
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 IMG_SIZE = (input_details[0]['shape'][2], input_details[0]['shape'][1])
-print(f"🧪 Model expects input size: {IMG_SIZE}")
+print(f"?~_?? Model expects input size: {IMG_SIZE}")
 
 # ==== GLOBAL STATE ====
 picam2 = None
@@ -63,12 +63,12 @@ def send_to_backend(image, disease_id, confidence, retries=3):
         try:
             r = requests.post(BACKEND_URL, files=files, data=data, timeout=10)
             if r.status_code == 200:
-                print(f"✅ Sent: Disease ID {disease_id} ({confidence:.2f})")
+                print(f"?~\~E Sent: Disease ID {disease_id} ({confidence:.2f})")
                 return True
             else:
-                print(f"⚠️ Backend error: {r.status_code}")
+                print(f"?~Z| ?~O Backend error: {r.status_code}")
         except Exception as e:
-            print(f"⚠️ Attempt {attempt} failed: {e}")
+            print(f"?~Z| ?~O Attempt {attempt} failed: {e}")
         time.sleep(2 ** attempt)
     return False
 
@@ -78,15 +78,15 @@ def release_camera():
     with camera_lock:
         if picam2 is not None:
             try:
-                print("🔒 Acquiring camera lock for cleanup...")
+                print("?~_~T~R Acquiring camera lock for cleanup...")
                 picam2.stop()
-                picam2.close()  # ← CRITICAL: Must call close()!
+                picam2.close()  # ?~F~P CRITICAL: Must call close()!
                 time.sleep(1)
             except Exception as e:
-                print(f"⚠️ Error releasing camera: {e}")
+                print(f"?~Z| ?~O Error releasing camera: {e}")
             finally:
                 picam2 = None
-                print("✓ Camera safely released")
+                print("?~\~S Camera safely released")
 
 def initialize_camera():
     """Initialize camera with robust error handling."""
@@ -104,16 +104,16 @@ def initialize_camera():
 
         for attempt in range(CAMERA_INIT_RETRIES):
             try:
-                print(f"📷 Initializing camera (attempt {attempt + 1}/{CAMERA_INIT_RETRIES})...")
+                print(f"?~_~S? Initializing camera (attempt {attempt + 1}/{CAMERA_INIT_RETRIES})...")
                 picam2 = Picamera2()
                 config = picam2.create_preview_configuration(main={"size": (640, 480)})
                 picam2.configure(config)
                 picam2.start()
                 time.sleep(2)  # Allow time for camera to stabilize
-                print("📸 Camera initialized and ready!")
+                print("?~_~S? Camera initialized and ready!")
                 return True
             except Exception as e:
-                print(f"⚠️ Camera init failed: {e}")
+                print(f"?~Z| ?~O Camera init failed: {e}")
                 if picam2 is not None:
                     try:
                         picam2.close()
@@ -121,14 +121,14 @@ def initialize_camera():
                         pass
                     picam2 = None
                 time.sleep(CAMERA_RETRY)
-        
-        print("❌ Failed to initialize camera after multiple attempts")
+
+        print("?~]~L Failed to initialize camera after multiple attempts")
         return False
 
 # ==== SIGNAL HANDLING ====
 def signal_handler(sig, frame):
     global should_stop
-    print("\n🛑 Shutting down gracefully...")
+    print("\n?~_~[~Q Shutting down gracefully...")
     should_stop = True
     release_camera()
     sys.exit(0)
@@ -144,7 +144,7 @@ try:
             r = requests.get(CHECK_START_URL, timeout=5)
             feed_on = r.json().get("start", False)
         except Exception as e:
-            print(f"⚠️ Error checking start signal: {e}")
+            print(f"?~Z| ?~O Error checking start signal: {e}")
             time.sleep(NETWORK_RETRY)
             continue
 
@@ -161,10 +161,10 @@ try:
                     if picam2 is not None:
                         frame = picam2.capture_array()
                 disease_id, confidence = predict_disease(frame)
-                print(f"🖼 Prediction: Disease ID {disease_id}, Confidence: {confidence:.2f}")
+                print(f"?~_~V? Prediction: Disease ID {disease_id}, Confidence: {confidence:.2f}")
                 send_to_backend(frame, disease_id, confidence)
             except Exception as e:
-                print(f"⚠️ Error capturing frame: {e}")
+                print(f"?~Z| ?~O Error capturing frame: {e}")
                 release_camera()
             time.sleep(CAPTURE_INTERVAL)
 
@@ -172,12 +172,14 @@ try:
             # Stop camera if feed turned off
             if picam2 is not None:
                 release_camera()
-                print("⏸ Camera stopped. Waiting for start signal...")
+                print("?~O? Camera stopped. Waiting for start signal...")
             time.sleep(1)
 
 except Exception as e:
-    print(f"❌ Unexpected error: {e}")
+    print(f"?~]~L Unexpected error: {e}")
     release_camera()
 finally:
     release_camera()
-    print("📷 Client shutdown complete")
+    print("?~_~S? Client shutdown complete")
+
+
