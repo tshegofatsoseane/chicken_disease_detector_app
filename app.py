@@ -1,5 +1,3 @@
-## app.py
-
 import eventlet
 eventlet.monkey_patch()  # Must be the first import for Eventlet
 
@@ -35,6 +33,8 @@ PAYSTACK_PUBLIC_KEY = os.environ.get("PAYSTACK_PUBLIC_KEY")
 DOWNLOAD_COST_ZAR = 50  # 50 ZAR per PDF download
 SUBSCRIPTION_COST_ZAR = 500  # 500 ZAR per month
 PAYSTACK_CURRENCY = "ZAR"  # South African Rand
+FREE_TIER_SCANS_PER_DAY = 5
+FREE_TIER_DOWNLOADS_PER_DAY = 5
 
 # ==============================
 # Flask setup
@@ -144,6 +144,64 @@ def get_user_subscription_status(username):
     }
 
 # ==============================
+# Usage stats helper functions
+# ==============================
+def get_today_start_end():
+    """Get start and end of today in UTC."""
+    today = datetime.utcnow().date()
+    start = datetime.combine(today, datetime.min.time())
+    end = datetime.combine(today, datetime.max.time())
+    return start, end
+
+def get_user_usage_stats(username):
+    """Get user's daily usage statistics."""
+    try:
+        is_premium = check_user_subscription(username)
+        start, end = get_today_start_end()
+        
+        # Count today's scans (analysis results created today)
+        scans_today = results_col.count_documents({
+            "username": username,
+            "created_at": {"$gte": start, "$lte": end}
+        })
+        
+        # Count today's completed downloads (paid)
+        downloads_today = transactions_col.count_documents({
+            "username": username,
+            "type": "download",
+            "status": "completed",
+            "verified_at": {"$gte": start, "$lte": end}
+        })
+        
+        if is_premium:
+            scans_limit = None
+            downloads_limit = None
+        else:
+            scans_limit = FREE_TIER_SCANS_PER_DAY
+            downloads_limit = None  # No download limit, but all paid
+        
+        return {
+            "scans_used": scans_today,
+            "scans_limit": scans_limit,
+            "scans_remaining": scans_limit - scans_today if scans_limit else None,
+            "downloads_used": downloads_today,
+            "downloads_limit": downloads_limit,
+            "downloads_remaining": None,  # No limit on downloads
+            "is_premium": is_premium
+        }
+    except Exception as e:
+        print(f"⚠️ Error getting usage stats: {e}")
+        return {
+            "scans_used": 0,
+            "scans_limit": FREE_TIER_SCANS_PER_DAY,
+            "scans_remaining": FREE_TIER_SCANS_PER_DAY,
+            "downloads_used": 0,
+            "downloads_limit": None,
+            "downloads_remaining": None,
+            "is_premium": False
+        }
+
+# ==============================
 # Paystack helper functions
 # ==============================
 def initialize_paystack_payment(email, amount, metadata, callback_url=None):
@@ -160,7 +218,6 @@ def initialize_paystack_payment(email, amount, metadata, callback_url=None):
         "metadata": metadata
     }
     
-    # Add callback URL if provided
     if callback_url:
         payload["callback_url"] = callback_url
     
@@ -294,6 +351,54 @@ def subscription_status():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@app.route("/api/usage-stats", methods=["GET"])
+@login_required
+def usage_stats():
+    """Get user's usage statistics for the current day."""
+    try:
+        username = session["user"]
+        
+        # Debug: Log detailed stats
+        start, end = get_today_start_end()
+        print(f"\n📊 Usage Stats for {username}")
+        print(f"   Time range: {start} to {end}")
+        
+        # Count scans
+        scans_today = results_col.count_documents({
+            "username": username,
+            "created_at": {"$gte": start, "$lte": end}
+        })
+        print(f"   Scans today: {scans_today}")
+        
+        # Count completed downloads (both paid and free)
+        downloads_today = transactions_col.count_documents({
+            "username": username,
+            "type": "download",
+            "status": "completed",
+            "verified_at": {"$gte": start, "$lte": end}
+        })
+        print(f"   Downloads completed (with verified_at): {downloads_today}")
+        
+        # Also check for free downloads that might not have verified_at
+        all_transactions = list(transactions_col.find({
+            "username": username,
+            "type": "download",
+            "status": "completed"
+        }))
+        print(f"   Total download transactions: {len(all_transactions)}")
+        for t in all_transactions:
+            print(f"      - {t.get('reference')} at {t.get('verified_at', 'NO VERIFIED_AT')}")
+        
+        stats = get_user_usage_stats(username)
+        print(f"   Final stats: {stats}\n")
+        return jsonify(stats), 200
+    except Exception as e:
+        print(f"⚠️ Error getting usage stats: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @app.route("/api/initialize-subscription", methods=["POST"])
 @login_required
 def initialize_subscription():
@@ -341,7 +446,7 @@ def initialize_subscription():
         print(f"💎 Initializing subscription - Email: {email}, Amount: R{SUBSCRIPTION_COST_ZAR}.00")
         
         # Generate callback URL for Paystack to redirect back
-        callback_url = request.url_root.rstrip('/') + '/'
+        callback_url = request.url_root.rstrip('/') + '/payment-callback'
         
         # Let Paystack auto-generate the reference
         response = initialize_paystack_payment(email, amount_cents, metadata, callback_url)
@@ -367,7 +472,6 @@ def initialize_subscription():
             
             print(f"✅ Subscription payment initialized - Reference: {paystack_reference}")
             
-            # Return the payment URL for frontend to redirect
             return jsonify({
                 "status": "ok",
                 "payment_url": response["data"]["authorization_url"],
@@ -533,23 +637,73 @@ def capture_frame():
 
 
 @app.route("/analyze-frame", methods=["POST"])
+@login_required
 def analyze_frame():
-    """Analyze the captured frame (currently a placeholder)."""
+    """Analyze the captured frame with ML model."""
     global captured_frame
     try:
+        username = session["user"]
+        is_premium = check_user_subscription(username)
+        
+        # Check usage limits for free users
+        if not is_premium:
+            start, end = get_today_start_end()
+            scans_today = results_col.count_documents({
+                "username": username,
+                "created_at": {"$gte": start, "$lte": end}
+            })
+            
+            if scans_today >= FREE_TIER_SCANS_PER_DAY:
+                print(f"⚠️ User {username} reached daily scan limit ({FREE_TIER_SCANS_PER_DAY})")
+                socketio.emit("frame_analyzed", {
+                    "status": "limit_reached",
+                    "disease_id": 0,
+                    "confidence": 0,
+                    "message": "Daily scan limit reached. Upgrade to Premium for unlimited scans.",
+                    "limit_reached": True
+                })
+                return jsonify({
+                    "status": "error",
+                    "message": "Daily scan limit reached",
+                    "limit_reached": True
+                }), 429
+        
         if not captured_frame:
             return jsonify({"status": "error", "message": "No captured frame"}), 400
 
+        # TODO: Integrate your TFLite ML model here
+        # For now, returning placeholder values
+        # Steps:
+        # 1. Decode captured_frame from base64
+        # 2. Preprocess image (resize, normalize)
+        # 3. Run inference with your model
+        # 4. Get disease_id and confidence
+        
         disease_id = 0
         confidence = 0.95
-
+        
+        # Save result with timestamp
+        result_data = {
+            "username": username,
+            "disease_id": disease_id,
+            "confidence": confidence,
+            "frame": captured_frame,
+            "created_at": datetime.utcnow()
+        }
+        results_col.insert_one(result_data)
+        
+        print(f"🔍 Frame analyzed - Disease ID: {disease_id}, Confidence: {confidence}")
+        
         socketio.emit("frame_analyzed", {
             "disease_id": disease_id,
             "confidence": confidence
         })
-
-        print(f"🔍 Frame analyzed - Disease ID: {disease_id}, Confidence: {confidence}")
-        return jsonify({"status": "ok", "disease_id": disease_id, "confidence": confidence}), 200
+        
+        return jsonify({
+            "status": "ok",
+            "disease_id": disease_id,
+            "confidence": confidence
+        }), 200
     except Exception as e:
         print(f"⚠️ Error analyzing frame: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -565,6 +719,7 @@ def save_result():
             return jsonify({"status": "error", "message": "No data"}), 400
 
         data["username"] = session["user"]
+        data["created_at"] = datetime.utcnow()
         results_col.insert_one(data)
         print(f"💾 Result saved for user: {session['user']}")
         return jsonify({"status": "ok"}), 200
@@ -582,6 +737,8 @@ def get_history():
         results = list(results_col.find({"username": username}).sort("_id", -1))
         for r in results:
             r["_id"] = str(r["_id"])
+            if "created_at" in r:
+                r["timestamp"] = r["created_at"].isoformat()
         print(f"📋 Retrieved {len(results)} history records for {username}")
         return jsonify(results)
     except Exception as e:
@@ -599,32 +756,43 @@ def initialize_payment():
         data = request.json
         amount_zar = data.get("amount", DOWNLOAD_COST_ZAR)
         
-        # Check if user has premium subscription (free downloads)
+        print(f"💳 Initialize payment request - User: {username}, Amount: R{amount_zar}")
+        
+        # Check if user has premium subscription (free downloads for premium users)
         if check_user_subscription(username):
+            print(f"💎 Premium user detected - free download allowed")
             return jsonify({
                 "status": "ok",
                 "is_premium": True,
                 "message": "Premium user - download is free"
             }), 200
         
+        # Free tier users must pay for downloads
+        print(f"💰 Free tier user - proceeding to payment for R{amount_zar}")
+        
         amount_cents = int(amount_zar * 100)
         disease_name = data.get("disease_name", "Report")
         
         user = users_col.find_one({"username": username})
         if not user:
+            print(f"❌ User not found: {username}")
             return jsonify({"status": "error", "message": "User not found"}), 400
         
         email = user.get("email")
         if not email or "@" not in email:
+            print(f"❌ Invalid email for {username}: {email}")
             return jsonify({"status": "error", "message": "User email not set. Please update your profile."}), 400
         
         # Clean up old pending transactions (older than 10 minutes)
         ten_min_ago = datetime.utcnow() - timedelta(minutes=10)
-        transactions_col.delete_many({
+        old_count = transactions_col.delete_many({
             "email": email,
+            "type": "download",
             "status": "pending",
             "timestamp": {"$lt": ten_min_ago}
-        })
+        }).deleted_count
+        if old_count > 0:
+            print(f"🗑️ Cleaned up {old_count} old pending transactions")
         
         metadata = {
             "username": username,
@@ -634,20 +802,16 @@ def initialize_payment():
             "currency": PAYSTACK_CURRENCY
         }
         
-        print(f"💳 Initializing payment - Email: {email}, Amount: R{amount_zar}.00 ({amount_cents} cents)")
-        
-        # Generate callback URL for Paystack to redirect back
-        callback_url = request.url_root.rstrip('/') + '/'
-        
-        # Let Paystack auto-generate the reference
+        print(f"💳 Initializing PAID download - User: {username}, Email: {email}, Amount: R{amount_zar}.00 ({amount_cents} cents)")
+        callback_url = request.url_root.rstrip('/') + '/payment-callback'
         response = initialize_paystack_payment(email, amount_cents, metadata, callback_url)
         
         if not response:
+            print(f"❌ Paystack service unavailable")
             return jsonify({"status": "error", "message": "Payment service unavailable"}), 500
         
         if response.get("status"):
             paystack_reference = response["data"]["reference"]
-            
             transaction_data = {
                 "username": username,
                 "email": email,
@@ -661,9 +825,8 @@ def initialize_payment():
                 "timestamp": datetime.utcnow()
             }
             transactions_col.insert_one(transaction_data)
-            print(f"✅ Payment initialized - Reference: {paystack_reference}")
+            print(f"✅ Payment initialized - Reference: {paystack_reference}, URL: {response['data']['authorization_url']}")
             
-            # Return the payment URL for frontend to redirect
             return jsonify({
                 "status": "ok",
                 "payment_url": response["data"]["authorization_url"],
@@ -680,25 +843,26 @@ def initialize_payment():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-@app.route("/api/verify-payment", methods=["POST"])
-@login_required
-def verify_payment():
+
     """Verify Paystack payment and allow PDF download."""
     try:
         data = request.json
         reference = data.get("reference")
+        username = session["user"]
         
         if not reference:
             return jsonify({"status": "error", "message": "No reference provided"}), 400
         
+        print(f"🔍 Verifying payment - Username: {username}, Reference: {reference}")
         response = verify_paystack_payment(reference)
         
         if response and response.get("status") and response["data"]["status"] == "success":
+            # Update transaction status
             transactions_col.update_one(
                 {"reference": reference},
                 {"$set": {"status": "completed", "verified_at": datetime.utcnow()}}
             )
-            print(f"✅ Payment verified for {session['user']}: {reference}")
+            print(f"✅ Payment verified for {username}: {reference}")
             return jsonify({
                 "status": "ok",
                 "message": "Payment verified successfully",
@@ -743,6 +907,85 @@ def payment_config():
         "currency": PAYSTACK_CURRENCY,
         "paystack_public_key": PAYSTACK_PUBLIC_KEY
     }), 200
+
+
+@app.route("/payment-callback", methods=["GET"])
+def payment_callback():
+    """Handle Paystack payment callback."""
+    try:
+        reference = request.args.get("reference")
+        print(f"\n🔗 Payment callback received - Reference: {reference}")
+        
+        if not reference:
+            print("⚠️ No reference in callback URL")
+            return redirect(url_for("index"))
+        
+        # Check if user is logged in
+        if "user" not in session:
+            print(f"⚠️ User not logged in on callback")
+            session["pending_payment_ref"] = reference
+            return redirect(url_for("login"))
+        
+        username = session["user"]
+        print(f"✅ Verifying payment for {username} - Reference: {reference}")
+        
+        # Verify the payment
+        response = verify_paystack_payment(reference)
+        
+        if response and response.get("status") and response["data"]["status"] == "success":
+            print(f"✅ Payment successful - marking as completed")
+            
+            # Find the transaction to determine type (subscription or download)
+            transaction = transactions_col.find_one({"reference": reference})
+            
+            if transaction:
+                transaction_type = transaction.get("type")
+                print(f"📋 Transaction type: {transaction_type}")
+                
+                # Update transaction status
+                transactions_col.update_one(
+                    {"reference": reference},
+                    {"$set": {"status": "completed", "verified_at": datetime.utcnow()}}
+                )
+                
+                # If subscription, activate premium
+                if transaction_type == "subscription":
+                    print(f"💎 Activating premium subscription for {username}")
+                    start_date = datetime.utcnow()
+                    end_date = start_date + timedelta(days=30)
+                    
+                    subscriptions_col.update_one(
+                        {"username": username},
+                        {
+                            "$set": {
+                                "username": username,
+                                "status": "active",
+                                "start_date": start_date,
+                                "end_date": end_date,
+                                "payment_reference": reference,
+                                "amount_paid": SUBSCRIPTION_COST_ZAR,
+                                "updated_at": datetime.utcnow()
+                            }
+                        },
+                        upsert=True
+                    )
+                    print(f"✅ Premium subscription activated until {end_date}")
+                else:
+                    print(f"💰 Download payment verified")
+            else:
+                print(f"⚠️ Transaction not found in database for reference: {reference}")
+            
+            # Redirect back to home with success message in URL
+            return redirect(url_for("index") + f"?payment_success=true&ref={reference}")
+        else:
+            print(f"⚠️ Payment verification failed")
+            return redirect(url_for("index") + f"?payment_failed=true&ref={reference}")
+            
+    except Exception as e:
+        print(f"⚠️ Error handling payment callback: {e}")
+        import traceback
+        traceback.print_exc()
+        return redirect(url_for("index"))
 
 
 @app.route("/health", methods=["GET"])
@@ -792,6 +1035,7 @@ if __name__ == "__main__":
     print(f"💳 Payment Configuration:")
     print(f"   - Download: R{DOWNLOAD_COST_ZAR}.00 ZAR per PDF")
     print(f"   - Subscription: R{SUBSCRIPTION_COST_ZAR}.00 ZAR per month")
+    print(f"   - Free Tier: {FREE_TIER_SCANS_PER_DAY} scans & {FREE_TIER_DOWNLOADS_PER_DAY} downloads/day")
     print(f"   - References: AUTO-GENERATED by Paystack")
     try:
         socketio.run(app, host="0.0.0.0", port=port, debug=False)
