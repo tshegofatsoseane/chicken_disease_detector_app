@@ -568,6 +568,16 @@ async function downloadPDF() {
   const { disease, confidence, image } = latestReport;
 
   try {
+    const pageWidth = pdf.internal.pageSize.width;
+
+    // Add logo to top-right
+    const logo = new Image();
+    logo.src = 'static/kgosilogo2-removebg-preview.png';
+    await new Promise(resolve => { logo.onload = resolve; }); // wait for image to load
+    const logoWidth = 30; // adjust width as needed
+    const logoHeight = 30; // adjust height as needed
+    pdf.addImage(logo, 'PNG', pageWidth - logoWidth - 20, 15, logoWidth, logoHeight);
+
     pdf.setFontSize(24);
     pdf.setTextColor(124, 58, 237);
     pdf.text("Kgosi BioDrone", 20, 20);
@@ -638,6 +648,7 @@ async function downloadPDF() {
     alert("Error generating PDF: " + e.message);
   }
 }
+
 
 function checkConnection() {
   fetch("/health")
