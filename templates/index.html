@@ -130,6 +130,71 @@
     </div>
   </div>
 
+  <!-- Autonomous Control Panel -->
+<section class="lg:col-span-2 bg-white p-5 rounded-2xl shadow">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h2 class="font-semibold text-lg">🤖 Autonomous Control</h2>
+      <p class="text-sm text-gray-500">Configure autonomous patrol mode</p>
+    </div>
+    <div class="flex items-center space-x-2">
+      <span id="auto-status" class="text-sm font-medium text-gray-500">Disabled</span>
+      <div class="toggle-switch">
+        <input type="checkbox" id="auto-toggle" onchange="toggleAutonomousMode()">
+        <label for="auto-toggle"></label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Map Preview (placeholder) -->
+  <div id="map-container" class="bg-gray-100 rounded-xl p-4 mb-4" style="min-height: 300px;">
+    <div class="text-center text-gray-500">
+      <svg class="w-16 h-16 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+      </svg>
+      <p>Map integration coming soon</p>
+      <p class="text-xs mt-2">Configure waypoints below</p>
+    </div>
+  </div>
+
+  <!-- Waypoint Configuration -->
+  <div class="space-y-3">
+    <h3 class="font-semibold text-purple-700">Patrol Waypoints</h3>
+    <div id="waypoints-list" class="space-y-2 max-h-48 overflow-y-auto">
+      <!-- Waypoints will be added here -->
+    </div>
+    
+    <button class="btn-secondary w-full" onclick="addWaypoint()">
+      ➕ Add Waypoint
+    </button>
+  </div>
+
+  <!-- Autonomous Stats -->
+  <div class="mt-4 grid grid-cols-3 gap-3">
+    <div class="bg-purple-50 p-3 rounded-lg text-center">
+      <span class="text-xs text-gray-600">Current WP</span>
+      <div id="current-wp" class="text-xl font-bold text-purple-700">-</div>
+    </div>
+    <div class="bg-green-50 p-3 rounded-lg text-center">
+      <span class="text-xs text-gray-600">Completed</span>
+      <div id="completed-wp" class="text-xl font-bold text-green-700">0</div>
+    </div>
+    <div class="bg-blue-50 p-3 rounded-lg text-center">
+      <span class="text-xs text-gray-600">Distance</span>
+      <div id="distance-traveled" class="text-xl font-bold text-blue-700">0m</div>
+    </div>
+  </div>
+</section>
+
+<!-- Critical Alerts Panel -->
+<section class="lg:col-span-1 bg-white p-5 rounded-2xl shadow">
+  <h2 class="font-semibold text-lg mb-3 text-red-600">🚨 Critical Alerts</h2>
+  <div id="alerts-list" class="space-y-2 max-h-96 overflow-y-auto">
+    <p class="text-gray-400 text-sm italic">No critical alerts</p>
+  </div>
+</section>
+
+
   <!-- Health Summary Cards -->
   <div class="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-3">
     <div class="bg-green-100 p-3 rounded-xl shadow flex flex-col items-center">
