@@ -246,33 +246,32 @@ def simple_takeoff_and_scan():
         except:
             pass
 
+last_sent = 0
+
 def capture_and_analyze():
-    """Capture frame, analyze, and send with GPS."""
-    global picam2, vehicle
-    
+    global picam2, vehicle, last_sent
+
     if picam2 is None:
         return
-    
+
     try:
         with camera_lock:
             frame = picam2.capture_array()
-        
-        # Predict disease
+
         disease_id, confidence = predict_disease(frame)
-        
-        # Get GPS location
         gps_location = get_gps_location()
-        
-        # Send to backend
-        send_to_backend(frame, disease_id, confidence, gps_location)
-        
-        # Check for critical diseases
+
+        # Send frame every 1 second
+        if time.time() - last_sent > 1:
+            send_to_backend(frame, disease_id, confidence, gps_location)
+            last_sent = time.time()
+
         if disease_id in CRITICAL_DISEASES and confidence > 0.75:
-            print(f"🚨 CRITICAL: Disease {disease_id} detected with {confidence:.2f} confidence!")
             send_critical_alert(disease_id, confidence, gps_location)
-            
+
     except Exception as e:
         print(f"⚠️ Capture error: {e}")
+
 
 # ==== SIGNAL HANDLING ====
 def signal_handler(sig, frame):
